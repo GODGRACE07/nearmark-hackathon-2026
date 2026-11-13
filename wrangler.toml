@@ -1,0 +1,21 @@
+name = "nearmark"
+main = "cloudflare/worker.mjs"
+compatibility_date = "2026-11-13"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[vars]
+NEAR_NETWORK = "testnet"
+NEAR_RPC_URL = "https://rpc.testnet.near.org"
+NEAR_RPC_FALLBACK_URL = "https://rpc.testnet.fastnear.com"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/mcp"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "nearmark-db"
+database_id = "0ee006c3-2626-474b-a97f-92fa9ff3f9ad"
