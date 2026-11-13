@@ -1,0 +1,32 @@
+name: Nearmark CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.1
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: node --test integrations/outlayer-worker/verify-receipt.test.mjs
+      - run: npm run typecheck
+      - run: npm run build
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: rustfmt
+          targets: wasm32-unknown-unknown
+      - run: cargo fmt --check --manifest-path contracts/near-gate/Cargo.toml
+      - run: cargo test --lib --manifest-path contracts/near-gate/Cargo.toml
+      - run: cargo fmt --check --manifest-path contracts/near-gate-ft/Cargo.toml
+      - run: cargo test --manifest-path contracts/near-gate-ft/Cargo.toml

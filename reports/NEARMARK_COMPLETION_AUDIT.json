@@ -1,0 +1,973 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "2026-11-13T07:59:14.983381+00:00",
+  "project": "NEARMARK",
+  "product": "Independent NEAR Agent Security Benchmark and Runtime Protection",
+  "sourceFileCount": 53,
+  "testFileCount": 7,
+  "frontendFiles": [
+    "src/main.tsx",
+    "src/App.tsx",
+    "src/pages/Inspector.tsx",
+    "src/pages/Benchmarks.tsx",
+    "src/pages/Developers.tsx",
+    "src/pages/Account.tsx",
+    "src/pages/Counterparty.tsx",
+    "src/pages/Overview.tsx",
+    "src/pages/Methodology.tsx",
+    "src/pages/Lab.tsx",
+    "src/pages/Landing.tsx",
+    "src/pages/Passport.tsx",
+    "src/components/AuthorityScene.tsx",
+    "src/components/Chrome.tsx",
+    "src/components/ErrorBoundary.tsx"
+  ],
+  "documentationFiles": [
+    "SECURITY.md",
+    "README.md",
+    "RELEASE-INFO.md",
+    "START-HERE.md",
+    "NEARMARK_GATE_IMPLEMENTATION.md",
+    "RPC-RECOVERY.md",
+    "docs/WHAT-TO-COLLECT.md",
+    "docs/DATA-SOURCES.md",
+    "docs/DEMO-SCRIPT.md",
+    "docs/ONE-CLICK-RELEASE.md",
+    "docs/PRODUCTION-PLAN.md",
+    "docs/IMPLEMENTATION-STATUS.md",
+    "docs/PHASE2-SDK-GUARD.md",
+    "docs/PHASE2-INTEGRATIONS.md",
+    "docs/HACKATHON.md",
+    "docs/DESIGN-SYSTEM.md",
+    "docs/HACKATHON-SUBMISSION-CHECKLIST.md",
+    "contracts/README.md",
+    "contracts/near-gate/README.md",
+    "packages/sdk/README.md",
+    "integrations/near-ai-verifier/README.md",
+    "integrations/outlayer-worker/README.md"
+  ],
+  "features": [
+    {
+      "id": "native_gate",
+      "name": "Native NEAR Gate contract",
+      "priority": "CRITICAL",
+      "status": "SOURCE_AND_TEST_REFERENCES_FOUND_RUNTIME_UNVERIFIED",
+      "signalsFound": 3,
+      "signalsRequired": 3,
+      "signals": [
+        {
+          "signal": "NEAR contract SDK",
+          "found": true,
+          "files": [
+            "scripts/nearmark-completion-audit.py"
+          ]
+        },
+        {
+          "signal": "Contract implementation",
+          "found": true,
+          "files": [
+            "contracts/near-gate-ft/src/lib.rs",
+            "contracts/near-gate/src/lib.rs",
+            "scripts/nearmark-completion-audit.py"
+          ]
+        },
+        {
+          "signal": "Payment or mandate enforcement",
+          "found": true,
+          "files": [
+            "server/outlayer-custody.mjs",
+            "server/index.mjs",
+            "server/phase2-routes.mjs",
+            "server/engine.mjs",
+            "contracts/near-gate-ft/src/lib.rs",
+            "contracts/near-gate/near-api-js-integration/testnet-smoke.mjs",
+            "contracts/near-gate/src/lib.rs",
+            "packages/mcp/server.mjs"
+          ]
+        }
+      ],
+      "testFiles": [
+        "server/phase2.test.mjs",
+        "server/engine.test.mjs",
+        "contracts/near-gate/tests/sandbox_smoke.rs",
+        "packages/sdk/ft-gate.test.mjs",
+        "packages/sdk/index.test.mjs",
+        "integrations/outlayer-worker/verify-receipt.test.mjs"
+      ],
+      "runtimeAcceptance": "NOT_VERIFIED_BY_STATIC_AUDIT"
+    },
+    {
+      "id": "restricted_key",
+      "name": "Restricted FunctionCall access key",
+      "priority": "CRITICAL",
+      "status": "SOURCE_AND_TEST_REFERENCES_FOUND_RUNTIME_UNVERIFIED",
+      "signalsFound": 3,
+      "signalsRequired": 3,
+      "signals": [
+        {
+          "signal": "FunctionCall permissions",
+          "found": true,
+          "files": [
+            "server/near.mjs",
+            "server/engine.mjs",
+            "contracts/near-gate-ft/src/lib.rs",
+            "contracts/near-gate/near-api-js-integration/testnet-smoke.mjs",
+            "contracts/near-gate/sandbox/sandbox.mjs",
+            "contracts/near-gate/src/lib.rs",
+            "packages/sdk/index.mjs",
+            "scripts/nearmark-completion-audit.py"
+          ]
+        },
+        {
+          "signal": "Restricted receiver or methods",
+          "found": true,
+          "files": [
+            "server/near.mjs",
+            "contracts/near-gate-ft/src/lib.rs",
+            "contracts/near-gate/near-api-js-integration/testnet-smoke.mjs",
+            "contracts/near-gate/near-api-js-integration/adapter-smoke.mjs",
+            "contracts/near-gate/sandbox/sandbox.mjs",
+            "contracts/near-gate/src/lib.rs",
+            "packages/cli/index.mjs",
+            "packages/sdk/index.d.ts"
+          ]
+        },
+        {
+          "signal": "Access-key inspection",
+          "found": true,
+          "files": [
+            "server/near.mjs",
+            "server/index.mjs",
+            "contracts/near-gate/sandbox/sandbox.mjs",
+            "packages/mcp/server.mjs",
+            "scripts/nearmark-completion-audit.py",
+            "scripts/near-testnet-rpc.mjs",
+            "src/pages/Inspector.tsx",
+            "src/pages/Developers.tsx"
+          ]
+        }
+      ],
+      "testFiles": [
+        "server/engine.test.mjs",
+        "contracts/near-gate/tests/sandbox_smoke.rs",
+        "packages/sdk/ft-gate.test.mjs",
+        "packages/sdk/index.test.mjs"
+      ],
+      "runtimeAcceptance": "NOT_VERIFIED_BY_STATIC_AUDIT"
+    },
+    {
+      "id": "authority",
+      "name": "Authority Intelligence",
+      "priority": "CRITICAL",
+      "status": "SOURCE_AND_TEST_REFERENCES_FOUND_RUNTIME_UNVERIFIED",
+      "signalsFound": 3,
+      "signalsRequired": 3,
+      "signals": [
+        {
+          "signal": "Access-key inspection",
+          "found": true,
+          "files": [
+            "server/near.mjs",
+            "scripts/nearmark-completion-audit.py",
+            "scripts/near-testnet-rpc.mjs"
+          ]
+        },
+        {
+          "signal": "Permission classification",
+          "found": true,
+          "files": [
+            "server/near.mjs",
+            "server/engine.mjs",
+            "contracts/near-gate-ft/src/lib.rs",
+            "contracts/near-gate/near-api-js-integration/testnet-smoke.mjs",
+            "contracts/near-gate/sandbox/sandbox.mjs",
+            "contracts/near-gate/src/lib.rs",
+            "packages/sdk/index.mjs",
+            "scripts/nearmark-completion-audit.py"
+          ]
+        },
+        {
+          "signal": "Authority analysis",
+          "found": true,
+          "files": [
+            "server/near.mjs",
+            "server/index.mjs",
+            "contracts/near-gate/sandbox/sandbox.mjs",
+            "packages/mcp/server.mjs",
+            "packages/cli/index.mjs",
+            "scripts/nearmark-completion-audit.py",
+            "scripts/near-testnet-rpc.mjs",
+            "src/pages/Inspector.tsx"
+          ]
+        }
+      ],
+      "testFiles": [
+        "contracts/near-gate/tests/sandbox_smoke.rs"
+      ],
+      "runtimeAcceptance": "NOT_VERIFIED_BY_STATIC_AUDIT"
+    },
+    {
+      "id": "counterparty",
+      "name": "Counterparty Intelligence",
+      "priority": "CRITICAL",
+      "status": "SOURCE_AND_TEST_REFERENCES_FOUND_RUNTIME_UNVERIFIED",
+      "signalsFound": 3,
+      "signalsRequired": 3,
+      "signals": [
+        {
+          "signal": "Counterparty assessment",
+          "found": true,
+          "files": [
+            "server/index.mjs",
+            "server/engine.mjs",
+            "packages/mcp/server.mjs",
+            "packages/cli/index.mjs",
+            "packages/sdk/index.d.ts",
+            "packages/sdk/index.mjs",
+            "scripts/nearmark-completion-audit.py",
+            "src/App.tsx"
+          ]
+        },
+        {
+          "signal": "Decision states",
+          "found": true,
+          "files": [
+            "server/near.mjs",
+            "server/outlayer-custody.mjs",
+            "server/index.mjs",
+            "server/near-ai-tee.mjs",
+            "server/engine.mjs",
+            "contracts/near-gate-ft/src/lib.rs",
+            "contracts/near-gate/near-api-js-integration/testnet-smoke.mjs",
+            "contracts/near-gate/sandbox/sandbox.mjs"
+          ]
+        },
+        {
+          "signal": "Evidence and reasons",
+          "found": true,
+          "files": [
+            "server/outlayer-custody.mjs",
+            "server/index.mjs",
+            "server/near-ai-tee.mjs",
+            "server/engine.mjs",
+            "contracts/near-gate/near-api-js-integration/testnet-smoke.mjs",
+            "packages/sdk/index.d.ts",
+            "packages/sdk/index.mjs",
+            "scripts/verify-near-ai-tee.mjs"
+          ]
+        }
+      ],
+      "testFiles": [
+        "server/phase2.test.mjs",
+        "server/near.test.mjs",
+        "server/engine.test.mjs",
+        "contracts/near-gate/tests/sandbox_smoke.rs",
+        "packages/sdk/ft-gate.test.mjs",
+        "packages/sdk/index.test.mjs",
+        "integrations/outlayer-worker/verify-receipt.test.mjs"
+      ],
+      "runtimeAcceptance": "NOT_VERIFIED_BY_STATIC_AUDIT"
+    },
+    {
+      "id": "runtime_guard",
+      "name": "Agent-side runtime security guard",
+      "priority": "CRITICAL",
+      "status": "SOURCE_AND_TEST_REFERENCES_FOUND_RUNTIME_UNVERIFIED",
+      "signalsFound": 3,
+      "signalsRequired": 3,
+      "signals": [
+        {
+          "signal": "Transaction signing integration",
+          "found": true,
+          "files": [
+            "scripts/nearmark-completion-audit.py"
+          ]
+        },
+        {
+          "signal": "Decision enforcement",
+          "found": true,
+          "files": [
+            "server/near.mjs",
+            "server/outlayer-custody.mjs",
+            "server/index.mjs",
+            "server/engine.mjs",
+            "contracts/near-gate-ft/src/lib.rs",
+            "contracts/near-gate/near-api-js-integration/testnet-smoke.mjs",
+            "contracts/near-gate/sandbox/sandbox.mjs",
+            "contracts/near-gate/src/lib.rs"
+          ]
+        },
+        {
+          "signal": "Human approval",
+          "found": true,
+          "files": [
+            "server/engine.mjs",
+            "packages/sdk/index.mjs",
+            "scripts/nearmark-completion-audit.py",
+            "src/pages/Developers.tsx"
+          ]
+        }
+      ],
+      "testFiles": [
+        "server/phase2.test.mjs",
+        "server/near.test.mjs",
+        "server/engine.test.mjs",
+        "contracts/near-gate/tests/sandbox_smoke.rs",
+        "packages/sdk/ft-gate.test.mjs",
+        "packages/sdk/index.test.mjs",
+        "integrations/outlayer-worker/verify-receipt.test.mjs"
+      ],
+      "runtimeAcceptance": "NOT_VERIFIED_BY_STATIC_AUDIT"
+    },
+    {
+      "id": "attack_lab",
+      "name": "Prompt-injection Attack Laboratory",
+      "priority": "CRITICAL",
+      "status": "SOURCE_AND_TEST_REFERENCES_FOUND_RUNTIME_UNVERIFIED",
+      "signalsFound": 3,
+      "signalsRequired": 3,
+      "signals": [
+        {
+          "signal": "Prompt-injection scenario",
+          "found": true,
+          "files": [
+            "server/engine.mjs",
+            "contracts/near-gate-ft/src/lib.rs",
+            "contracts/near-gate/near-api-js-integration/testnet-smoke.mjs",
+            "contracts/near-gate/sandbox/sandbox.mjs",
+            "contracts/near-gate/src/lib.rs",
+            "scripts/nearmark-completion-audit.py",
+            "src/pages/Methodology.tsx",
+            "src/pages/Lab.tsx"
+          ]
+        },
+        {
+          "signal": "Malicious payment or recipient",
+          "found": true,
+          "files": [
+            "scripts/nearmark-completion-audit.py",
+            "src/pages/Counterparty.tsx",
+            "src/pages/Methodology.tsx"
+          ]
+        },
+        {
+          "signal": "Attack execution evidence",
+          "found": true,
+          "files": [
+            "src/pages/Account.tsx",
+            "src/pages/Methodology.tsx",
+            "src/pages/Landing.tsx"
+          ]
+        }
+      ],
+      "testFiles": [
+        "server/phase2.test.mjs",
+        "server/engine.test.mjs",
+        "contracts/near-gate/tests/sandbox_smoke.rs",
+        "packages/sdk/ft-gate.test.mjs",
+        "packages/sdk/index.test.mjs"
+      ],
+      "runtimeAcceptance": "NOT_VERIFIED_BY_STATIC_AUDIT"
+    },
+    {
+      "id": "sandbox",
+      "name": "Real NEAR Sandbox execution",
+      "priority": "CRITICAL",
+      "status": "SOURCE_AND_TEST_REFERENCES_FOUND_RUNTIME_UNVERIFIED",
+      "signalsFound": 3,
+      "signalsRequired": 3,
+      "signals": [
+        {
+          "signal": "Sandbox dependency",
+          "found": true,
+          "files": [
+            "contracts/near-gate/sandbox/sandbox.mjs",
+            "scripts/nearmark-completion-audit.py"
+          ]
+        },
+        {
+          "signal": "Sandbox execution",
+          "found": true,
+          "files": [
+            "contracts/near-gate/sandbox/sandbox.mjs",
+            "contracts/near-gate/src/lib.rs",
+            "scripts/nearmark-completion-audit.py",
+            "src/pages/Methodology.tsx",
+            "src/pages/Lab.tsx"
+          ]
+        },
+        {
+          "signal": "State verification",
+          "found": true,
+          "files": [
+            "server/outlayer-custody.mjs",
+            "server/index.mjs",
+            "contracts/near-gate/near-api-js-integration/testnet-smoke.mjs",
+            "scripts/nearmark-completion-audit.py",
+            "scripts/near-testnet-rpc.mjs",
+            "src/pages/Developers.tsx"
+          ]
+        }
+      ],
+      "testFiles": [
+        "server/engine.test.mjs",
+        "contracts/near-gate/tests/sandbox_smoke.rs",
+        "packages/sdk/ft-gate.test.mjs",
+        "packages/sdk/index.test.mjs",
+        "integrations/outlayer-worker/verify-receipt.test.mjs"
+      ],
+      "runtimeAcceptance": "NOT_VERIFIED_BY_STATIC_AUDIT"
+    },
+    {
+      "id": "nasb",
+      "name": "NASB-1 reproducible security benchmark",
+      "priority": "CRITICAL",
+      "status": "SOURCE_AND_TEST_REFERENCES_FOUND_RUNTIME_UNVERIFIED",
+      "signalsFound": 3,
+      "signalsRequired": 3,
+      "signals": [
+        {
+          "signal": "Benchmark specification",
+          "found": true,
+          "files": [
+            "scripts/nearmark-completion-audit.py"
+          ]
+        },
+        {
+          "signal": "Versioned test suite",
+          "found": true,
+          "files": [
+            "server/index.mjs",
+            "server/engine.mjs",
+            "scripts/nearmark-completion-audit.py",
+            "src/pages/Benchmarks.tsx",
+            "src/pages/Lab.tsx"
+          ]
+        },
+        {
+          "signal": "Evidence and reproducibility",
+          "found": true,
+          "files": [
+            "server/engine.mjs",
+            "contracts/near-gate/near-api-js-integration/testnet-smoke.mjs",
+            "contracts/near-gate/src/lib.rs",
+            "scripts/verify-near-ai-tee.mjs",
+            "scripts/nearmark-completion-audit.py",
+            "scripts/verify-gate-code.mjs",
+            "integrations/outlayer-worker/verify-receipt.mjs",
+            "integrations/outlayer-worker/src/main.rs"
+          ]
+        }
+      ],
+      "testFiles": [
+        "server/engine.test.mjs",
+        "contracts/near-gate/tests/sandbox_smoke.rs",
+        "integrations/outlayer-worker/verify-receipt.test.mjs"
+      ],
+      "runtimeAcceptance": "NOT_VERIFIED_BY_STATIC_AUDIT"
+    },
+    {
+      "id": "sdk",
+      "name": "Public TypeScript SDK",
+      "priority": "HIGH",
+      "status": "SOURCE_AND_TEST_REFERENCES_FOUND_RUNTIME_UNVERIFIED",
+      "signalsFound": 3,
+      "signalsRequired": 3,
+      "signals": [
+        {
+          "signal": "SDK implementation",
+          "found": true,
+          "files": [
+            "packages/sdk/index.d.ts",
+            "packages/sdk/index.mjs",
+            "scripts/nearmark-completion-audit.py",
+            "src/pages/Developers.tsx"
+          ]
+        },
+        {
+          "signal": "Wallet inspection API",
+          "found": true,
+          "files": [
+            "scripts/nearmark-completion-audit.py"
+          ]
+        },
+        {
+          "signal": "Counterparty API",
+          "found": true,
+          "files": [
+            "packages/sdk/index.d.ts",
+            "packages/sdk/index.mjs",
+            "scripts/nearmark-completion-audit.py",
+            "src/pages/Developers.tsx"
+          ]
+        }
+      ],
+      "testFiles": [
+        "server/phase2.test.mjs",
+        "packages/sdk/ft-gate.test.mjs",
+        "packages/sdk/index.test.mjs"
+      ],
+      "runtimeAcceptance": "NOT_VERIFIED_BY_STATIC_AUDIT"
+    },
+    {
+      "id": "rest_api",
+      "name": "Nearmark REST API",
+      "priority": "HIGH",
+      "status": "SOURCE_AND_TEST_REFERENCES_FOUND_RUNTIME_UNVERIFIED",
+      "signalsFound": 3,
+      "signalsRequired": 3,
+      "signals": [
+        {
+          "signal": "Wallet inspection endpoint",
+          "found": true,
+          "files": [
+            "scripts/nearmark-completion-audit.py"
+          ]
+        },
+        {
+          "signal": "Counterparty endpoint",
+          "found": true,
+          "files": [
+            "scripts/nearmark-completion-audit.py"
+          ]
+        },
+        {
+          "signal": "Benchmark or passport endpoint",
+          "found": true,
+          "files": [
+            "scripts/nearmark-completion-audit.py"
+          ]
+        }
+      ],
+      "testFiles": [
+        "server/phase2.test.mjs",
+        "server/near.test.mjs",
+        "packages/sdk/ft-gate.test.mjs",
+        "packages/sdk/index.test.mjs"
+      ],
+      "runtimeAcceptance": "NOT_VERIFIED_BY_STATIC_AUDIT"
+    },
+    {
+      "id": "cli",
+      "name": "Developer CLI",
+      "priority": "MEDIUM",
+      "status": "SOURCE_AND_TEST_REFERENCES_FOUND_RUNTIME_UNVERIFIED",
+      "signalsFound": 2,
+      "signalsRequired": 2,
+      "signals": [
+        {
+          "signal": "CLI framework",
+          "found": true,
+          "files": [
+            "server/index.mjs",
+            "server/near-ai-tee.mjs",
+            "scripts/verify-near-ai-tee.mjs",
+            "scripts/nearmark-completion-audit.py"
+          ]
+        },
+        {
+          "signal": "CLI commands",
+          "found": true,
+          "files": [
+            "server/near.mjs",
+            "server/outlayer-custody.mjs",
+            "server/index.mjs",
+            "server/phase2-routes.mjs",
+            "server/engine.mjs",
+            "contracts/near-gate/near-api-js-integration/testnet-smoke.mjs",
+            "packages/mcp/server.mjs",
+            "packages/cli/index.mjs"
+          ]
+        }
+      ],
+      "testFiles": [
+        "server/phase2.test.mjs",
+        "packages/sdk/ft-gate.test.mjs",
+        "packages/sdk/index.test.mjs"
+      ],
+      "runtimeAcceptance": "NOT_VERIFIED_BY_STATIC_AUDIT"
+    },
+    {
+      "id": "mcp",
+      "name": "Restricted MCP server",
+      "priority": "MEDIUM",
+      "status": "SOURCE_REFERENCES_FOUND_TESTS_NOT_FOUND",
+      "signalsFound": 2,
+      "signalsRequired": 2,
+      "signals": [
+        {
+          "signal": "MCP implementation",
+          "found": true,
+          "files": [
+            "scripts/nearmark-completion-audit.py"
+          ]
+        },
+        {
+          "signal": "Tool registration",
+          "found": true,
+          "files": [
+            "scripts/nearmark-completion-audit.py"
+          ]
+        }
+      ],
+      "testFiles": [],
+      "runtimeAcceptance": "NOT_VERIFIED_BY_STATIC_AUDIT"
+    },
+    {
+      "id": "outlayer_custody",
+      "name": "OutLayer Agent Custody",
+      "priority": "HIGH",
+      "status": "SOURCE_AND_TEST_REFERENCES_FOUND_RUNTIME_UNVERIFIED",
+      "signalsFound": 3,
+      "signalsRequired": 3,
+      "signals": [
+        {
+          "signal": "OutLayer integration",
+          "found": true,
+          "files": [
+            "server/outlayer-custody.mjs",
+            "server/index.mjs",
+            "server/phase2-routes.mjs",
+            "server/engine.mjs",
+            "scripts/nearmark-completion-audit.py",
+            "scripts/prepare-env.mjs",
+            "integrations/outlayer-worker/verify-receipt.mjs",
+            "integrations/outlayer-worker/src/main.rs"
+          ]
+        },
+        {
+          "signal": "Policy and audit inspection",
+          "found": true,
+          "files": [
+            "server/outlayer-custody.mjs",
+            "server/index.mjs",
+            "scripts/nearmark-completion-audit.py"
+          ]
+        },
+        {
+          "signal": "Custody controls",
+          "found": true,
+          "files": [
+            "server/engine.mjs",
+            "contracts/near-gate-ft/src/lib.rs",
+            "contracts/near-gate/sandbox/sandbox.mjs",
+            "contracts/near-gate/src/lib.rs",
+            "packages/sdk/index.mjs",
+            "scripts/nearmark-completion-audit.py"
+          ]
+        }
+      ],
+      "testFiles": [
+        "server/phase2.test.mjs",
+        "packages/sdk/ft-gate.test.mjs",
+        "packages/sdk/index.test.mjs",
+        "integrations/outlayer-worker/verify-receipt.test.mjs"
+      ],
+      "runtimeAcceptance": "NOT_VERIFIED_BY_STATIC_AUDIT"
+    },
+    {
+      "id": "outlayer_tee",
+      "name": "OutLayer TEE benchmark receipts",
+      "priority": "HIGH",
+      "status": "SOURCE_AND_TEST_REFERENCES_FOUND_RUNTIME_UNVERIFIED",
+      "signalsFound": 3,
+      "signalsRequired": 3,
+      "signals": [
+        {
+          "signal": "OutLayer integration",
+          "found": true,
+          "files": [
+            "server/outlayer-custody.mjs",
+            "server/index.mjs",
+            "server/phase2-routes.mjs",
+            "server/engine.mjs",
+            "scripts/nearmark-completion-audit.py",
+            "scripts/prepare-env.mjs",
+            "integrations/outlayer-worker/verify-receipt.mjs",
+            "integrations/outlayer-worker/src/main.rs"
+          ]
+        },
+        {
+          "signal": "TEE or WASI worker",
+          "found": true,
+          "files": [
+            "server/index.mjs",
+            "server/phase2-routes.mjs",
+            "server/near-ai-tee.mjs",
+            "server/engine.mjs",
+            "contracts/near-gate/near-api-js-integration/testnet-smoke.mjs",
+            "contracts/near-gate/sandbox/sandbox.mjs",
+            "scripts/verify-near-ai-tee.mjs",
+            "scripts/nearmark-completion-audit.py"
+          ]
+        },
+        {
+          "signal": "Receipt or signing verification",
+          "found": true,
+          "files": [
+            "server/outlayer-custody.mjs",
+            "server/index.mjs",
+            "server/phase2-routes.mjs",
+            "server/near-ai-tee.mjs",
+            "server/engine.mjs",
+            "scripts/verify-near-ai-tee.mjs",
+            "scripts/nearmark-completion-audit.py",
+            "scripts/run-near-ai-tee-resilient.mjs"
+          ]
+        }
+      ],
+      "testFiles": [
+        "server/phase2.test.mjs",
+        "server/engine.test.mjs",
+        "packages/sdk/index.test.mjs",
+        "integrations/outlayer-worker/verify-receipt.test.mjs"
+      ],
+      "runtimeAcceptance": "NOT_VERIFIED_BY_STATIC_AUDIT"
+    },
+    {
+      "id": "near_ai",
+      "name": "NEAR AI TEE verification",
+      "priority": "HIGH",
+      "status": "SOURCE_AND_TEST_REFERENCES_FOUND_RUNTIME_UNVERIFIED",
+      "signalsFound": 3,
+      "signalsRequired": 3,
+      "signals": [
+        {
+          "signal": "Official NEAR AI SDK",
+          "found": true,
+          "files": [
+            "server/near-ai-tee.mjs",
+            "scripts/verify-near-ai-tee.mjs",
+            "scripts/nearmark-completion-audit.py"
+          ]
+        },
+        {
+          "signal": "Model verification",
+          "found": true,
+          "files": [
+            "scripts/nearmark-completion-audit.py"
+          ]
+        },
+        {
+          "signal": "Gateway verification",
+          "found": true,
+          "files": [
+            "scripts/nearmark-completion-audit.py"
+          ]
+        }
+      ],
+      "testFiles": [
+        "server/phase2.test.mjs",
+        "integrations/outlayer-worker/verify-receipt.test.mjs"
+      ],
+      "runtimeAcceptance": "NOT_VERIFIED_BY_STATIC_AUDIT"
+    },
+    {
+      "id": "near_ai_red",
+      "name": "NEAR AI RED adversarial testing",
+      "priority": "MEDIUM",
+      "status": "SOURCE_AND_TEST_REFERENCES_FOUND_RUNTIME_UNVERIFIED",
+      "signalsFound": 2,
+      "signalsRequired": 2,
+      "signals": [
+        {
+          "signal": "RED or cybersecurity model integration",
+          "found": true,
+          "files": [
+            "scripts/nearmark-completion-audit.py",
+            "src/pages/Lab.tsx"
+          ]
+        },
+        {
+          "signal": "Adversarial generation",
+          "found": true,
+          "files": [
+            "scripts/nearmark-completion-audit.py",
+            "src/pages/Lab.tsx",
+            "src/pages/Landing.tsx"
+          ]
+        }
+      ],
+      "testFiles": [
+        "server/phase2.test.mjs",
+        "server/near.test.mjs",
+        "packages/sdk/ft-gate.test.mjs",
+        "packages/sdk/index.test.mjs",
+        "integrations/outlayer-worker/verify-receipt.test.mjs"
+      ],
+      "runtimeAcceptance": "NOT_VERIFIED_BY_STATIC_AUDIT"
+    },
+    {
+      "id": "passports",
+      "name": "Evidence-backed security passports",
+      "priority": "HIGH",
+      "status": "SOURCE_AND_TEST_REFERENCES_FOUND_RUNTIME_UNVERIFIED",
+      "signalsFound": 3,
+      "signalsRequired": 3,
+      "signals": [
+        {
+          "signal": "Security passport implementation",
+          "found": true,
+          "files": [
+            "scripts/nearmark-completion-audit.py",
+            "src/App.tsx",
+            "src/pages/Inspector.tsx",
+            "src/pages/Landing.tsx",
+            "src/pages/Passport.tsx"
+          ]
+        },
+        {
+          "signal": "Evidence integrity",
+          "found": true,
+          "files": [
+            "server/engine.mjs",
+            "contracts/near-gate/near-api-js-integration/testnet-smoke.mjs",
+            "scripts/verify-near-ai-tee.mjs",
+            "scripts/nearmark-completion-audit.py",
+            "scripts/verify-gate-code.mjs",
+            "integrations/outlayer-worker/verify-receipt.mjs",
+            "integrations/outlayer-worker/src/main.rs"
+          ]
+        },
+        {
+          "signal": "Verification or signature",
+          "found": true,
+          "files": [
+            "server/phase2-routes.mjs",
+            "server/near-ai-tee.mjs",
+            "server/engine.mjs",
+            "contracts/near-gate/sandbox/sandbox.mjs",
+            "contracts/near-gate/src/lib.rs",
+            "packages/sdk/index.mjs",
+            "scripts/verify-near-ai-tee.mjs",
+            "scripts/nearmark-completion-audit.py"
+          ]
+        }
+      ],
+      "testFiles": [
+        "server/near.test.mjs",
+        "packages/sdk/index.test.mjs",
+        "integrations/outlayer-worker/verify-receipt.test.mjs"
+      ],
+      "runtimeAcceptance": "NOT_VERIFIED_BY_STATIC_AUDIT"
+    }
+  ],
+  "automatedChecks": [
+    {
+      "name": "check",
+      "status": "NOT_CONFIGURED",
+      "command": "npm run check"
+    },
+    {
+      "name": "test",
+      "status": "PASS",
+      "exitCode": 0,
+      "log": "logs/final-audit/test.log",
+      "lastOutput": [
+        "\u2714 NEAR RPC retries a configured fallback after primary HTTP failure (119.96632ms)",
+        "\u2714 NEAR RPC reports every endpoint failure clearly (1275.70506ms)",
+        "\u2714 NEAR AI rejects responses without a provider TEE signature (12.26652ms)",
+        "\u2714 NEAR AI marks only provider_tee signed responses as model TEE verified (3.015067ms)",
+        "\u2714 NEAR AI refuses to call inference if model attestation preflight returns no model proof (3.173049ms)",
+        "\u2714 OutLayer transfer stays off until explicitly enabled (1.411523ms)",
+        "\u2714 OutLayer transfer enforces Testnet recipient allowlist and maximum amount (6.000125ms)",
+        "\u2139 tests 41",
+        "\u2139 suites 0",
+        "\u2139 pass 41",
+        "\u2139 fail 0",
+        "\u2139 cancelled 0",
+        "\u2139 skipped 0",
+        "\u2139 todo 0",
+        "\u2139 duration_ms 1810.711855"
+      ]
+    },
+    {
+      "name": "build",
+      "status": "PASS",
+      "exitCode": 0,
+      "log": "logs/final-audit/build.log",
+      "lastOutput": [
+        "dist/assets/Methodology-CUXlcHkt.js                 7.74 kB \u2502 gzip:   2.81 kB \u2502 map:    13.53 kB",
+        "dist/assets/Overview-D6gxdzSI.js                    7.91 kB \u2502 gzip:   2.60 kB \u2502 map:    17.63 kB",
+        "dist/assets/Counterparty-Bx71-ODZ.js                9.58 kB \u2502 gzip:   3.21 kB \u2502 map:    22.54 kB",
+        "dist/assets/Inspector-BzT0OLHU.js                  10.04 kB \u2502 gzip:   3.38 kB \u2502 map:    20.71 kB",
+        "dist/assets/Developers-duzPk7e1.js                 10.21 kB \u2502 gzip:   3.54 kB \u2502 map:    21.95 kB",
+        "dist/assets/Lab-D_dvXCX2.js                        11.85 kB \u2502 gzip:   4.27 kB \u2502 map:    24.41 kB",
+        "dist/assets/index-BWRHTYsA.js                     415.05 kB \u2502 gzip: 134.47 kB \u2502 map: 2,364.45 kB",
+        "dist/assets/Landing-DRQ2igOa.js                   563.01 kB \u2502 gzip: 140.31 kB \u2502 map: 2,902.40 kB",
+        "",
+        "[plugin builtin:vite-reporter] ",
+        "(!) Some chunks are larger than 500 kB after minification. Consider:",
+        "- Using dynamic import() to code-split the application",
+        "- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting",
+        "- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.",
+        "\u2713 built in 2.46s"
+      ]
+    }
+  ],
+  "submissionReadiness": {
+    "gitRepository": false,
+    "remoteConfigured": false,
+    "remoteVisibility": "MUST_BE_CONFIRMED_PUBLIC",
+    "readmeExists": true,
+    "readmeInstallInstructions": true,
+    "readmeRunInstructions": true,
+    "readmeDemoInstructions": true,
+    "envFileTrackedByGit": false,
+    "envIgnoredByGit": false,
+    "envPatternInGitignore": true,
+    "deploymentConfigurationFound": [],
+    "xDemoPost": "MANUAL_CONFIRMATION_REQUIRED",
+    "mainnetPayoutAccount": "MANUAL_CONFIRMATION_REQUIRED",
+    "allRelevantTracksSelected": "MANUAL_CONFIRMATION_REQUIRED",
+    "gitHistorySecretScan": "NOT_PERFORMED"
+  },
+  "completion": {
+    "certifiedComplete": false,
+    "reason": "Static source discovery is not proof of runtime behavior. Critical contract, attack, sandbox and integration acceptance tests must be demonstrated.",
+    "coreFeatureCount": 10,
+    "coreWithoutSourceSignals": [],
+    "coreWithPartialSourceSignals": [],
+    "coreWithoutTargetedTests": [],
+    "failedAutomatedChecks": [],
+    "remainingTasks": [
+      {
+        "priority": "HIGH",
+        "task": "Configure and run project check: check."
+      },
+      {
+        "priority": "CRITICAL",
+        "task": "Demonstrate a real FunctionCall key restricted to one Gate contract."
+      },
+      {
+        "priority": "CRITICAL",
+        "task": "Run the prompt-injection attack and record proof that the forbidden transfer did not occur."
+      },
+      {
+        "priority": "HIGH",
+        "task": "Reproduce NASB-1 results from a clean environment."
+      },
+      {
+        "priority": "HIGH",
+        "task": "Verify OutLayer custody and TEE claims against actual API/attestation evidence."
+      },
+      {
+        "priority": "HIGH",
+        "task": "Complete NEAR AI cryptographic verification and response-signature testing."
+      },
+      {
+        "priority": "HIGH",
+        "task": "Verify public GitHub repository, secret-free Git history and reproducible README instructions."
+      },
+      {
+        "priority": "HIGH",
+        "task": "Confirm the live demo video/screenshots, X post, selected tracks and payout account."
+      }
+    ]
+  },
+  "tee": {
+    "status": "EVIDENCE_RETRIEVAL_OBSERVED_CRYPTOGRAPHIC_INTEGRATION_REQUIRES_FINAL_VALIDATION",
+    "note": "The previous terminal output showed raw Gateway and model evidence retrieval. This audit does not misrepresent that as a completed cryptographic verification or a verified deployment policy."
+  },
+  "sha256": "0e9196ebdab64c5ce3f220a279c73134b0a1d870d756645e4b19c95bee7c7370"
+}

@@ -1,0 +1,20 @@
+{
+  "display": {
+    "name": "NEARMARK NASB-0.1 TEE Receipt Signer",
+    "description": "Validates a bounded evidence manifest for the implemented NASB-0.1 local harness and signs a canonical receipt with an OutLayer TEE-derived key. The worker signs the receipt only; it does not execute NEAR Sandbox attacks or verify caller-supplied benchmark claims."
+  },
+  "operations": [
+    "attest_execution_receipt"
+  ],
+  "capabilities": {
+    "network": []
+  },
+  "signing_keys": [
+    {
+      "path": "nasb_receipts",
+      "type": "ed25519",
+      "bind": "project",
+      "caller": "signer"
+    }
+  ]
+}

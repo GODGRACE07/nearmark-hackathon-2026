@@ -1,0 +1,80 @@
+const [action, accountId, publicKey, expectedGate] = process.argv.slice(2);
+const RPC = process.env.NEAR_RPC_URL || 'https://rpc.testnet.fastnear.com';
+
+if (!action || !accountId) {
+  console.error('Usage: node near-testnet-rpc.mjs exists|balance|owner-key|code-hash|access-key <account-id> [public-key] [gate-id]');
+  process.exit(2);
+}
+if (!accountId.endsWith('.testnet')) throw new Error('This helper is locked to Testnet account IDs.');
+
+async function query(requestType, id) {
+  const response = await fetch(RPC, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0', id: `nearmark-${requestType}`,
+      method: 'query', params: { request_type: requestType, finality: 'final', account_id: id },
+    }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(`RPC HTTP ${response.status}`);
+  if (body.error) {
+    const message = JSON.stringify(body.error);
+    if (/unknown_account|does not exist|UNKNOWN_ACCOUNT/i.test(message)) return null;
+    throw new Error(message);
+  }
+  return body.result;
+}
+
+if (action === 'exists' || action === 'balance') {
+  const result = await query('view_account', accountId);
+  if (!result) {
+    if (action === 'exists') { console.log('MISSING'); process.exit(0); }
+    throw new Error(`Account ${accountId} does not exist.`);
+  }
+  if (action === 'exists') console.log('EXISTS');
+  else {
+    const yocto = BigInt(result.amount);
+    console.log(JSON.stringify({ accountId, balanceYocto: yocto.toString(), balanceNear: `${yocto / 10n ** 24n}.${(yocto % 10n ** 24n).toString().padStart(24, '0').slice(0, 6)}` }));
+  }
+  process.exit(0);
+}
+
+if (action === 'owner-key') {
+  if (!publicKey) throw new Error('owner-key needs the expected public key.');
+  const result = await query('view_access_key_list', accountId);
+  if (!result) throw new Error(`Owner account ${accountId} does not exist.`);
+  const entry = (result.keys || []).find(key => key.public_key === publicKey);
+  const permission = entry?.access_key?.permission;
+  const isFullAccess = permission === 'FullAccess' || permission?.FullAccess != null;
+  if (!isFullAccess) throw new Error('The expected owner key is not an on-chain Full Access key.');
+  console.log('OWNER_FULL_ACCESS');
+  process.exit(0);
+}
+
+if (action === 'code-hash') {
+  const result = await query('view_account', accountId);
+  if (!result) throw new Error(`Account ${accountId} does not exist.`);
+  console.log(result.code_hash || '11111111111111111111111111111111');
+  process.exit(0);
+}
+
+if (action === 'access-key') {
+  if (!publicKey || !expectedGate) throw new Error('access-key needs public key and Gate account ID.');
+  const result = await query('view_access_key_list', accountId);
+  if (!result) throw new Error(`Agent account ${accountId} does not exist.`);
+  const entry = (result.keys || []).find(key => key.public_key === publicKey);
+  if (!entry) { console.log('MISSING'); process.exit(0); }
+  const fn = entry.access_key?.permission?.FunctionCall;
+  const methods = Array.isArray(fn?.method_names) ? fn.method_names : [];
+  const exact = !!fn && fn.receiver_id === expectedGate && methods.length === 1 && methods[0] === 'execute_payment' && fn.allowance != null && BigInt(fn.allowance) > 0n;
+  if (!exact) {
+    console.error(JSON.stringify({ publicKey, permission: entry.access_key?.permission, expectedReceiver: expectedGate, expectedMethods: ['execute_payment'] }, null, 2));
+    process.exit(4);
+  }
+  console.log('EXACT_FUNCTION_CALL_SCOPE');
+  process.exit(0);
+}
+
+throw new Error(`Unknown action: ${action}`);

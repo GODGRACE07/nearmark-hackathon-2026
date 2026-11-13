@@ -1,0 +1,261 @@
+import assert from 'node:assert/strict';
+import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { Account, JsonRpcProvider, KeyPair } from 'near-api-js';
+import { createNearApiJsGateAdapter } from '../../../packages/sdk/index.mjs';
+
+const [ownerId, gateId, agentId, vendorId, keyFile, artifactFile] = process.argv.slice(2);
+if (![ownerId, gateId, agentId, vendorId, keyFile, artifactFile].every(Boolean)) {
+  console.error('Usage: node testnet-smoke.mjs <owner> <gate> <agent> <vendor> <key-file> <artifact-json>');
+  process.exit(2);
+}
+if (![ownerId, gateId, agentId, vendorId].every(id => id.endsWith('.testnet'))) {
+  throw new Error('This script is hard-locked to .testnet account IDs.');
+}
+if (gateId !== ownerId) throw new Error('For this demo, the dedicated Testnet owner account is also the Gate contract account.');
+
+const RPC = process.env.NEAR_RPC_URL || 'https://rpc.testnet.fastnear.com';
+const provider = new JsonRpcProvider({ url: RPC });
+const key = JSON.parse(await readFile(keyFile, 'utf8'));
+if (key.network !== 'testnet') throw new Error('Agent key is not marked as Testnet-only.');
+const keyPair = KeyPair.fromString(key.secretKey);
+assert.equal(keyPair.getPublicKey().toString(), key.publicKey, 'FunctionCall key pair mismatch.');
+
+async function rpcQuery(requestType, accountId) {
+  const response = await fetch(RPC, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0', id: `nearmark-${requestType}`,
+      method: 'query', params: { request_type: requestType, finality: 'final', account_id: accountId },
+    }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const data = await response.json();
+  if (!response.ok || data.error) throw new Error(JSON.stringify(data.error || { status: response.status }));
+  return data.result;
+}
+
+function amountWillExceedDailyBudget(spent, dailyLimit) {
+  return spent + 100_000_000_000_000_000_000n > dailyLimit;
+}
+
+async function getFinalBlockDay() {
+  const response = await fetch(RPC, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 'nearmark-final-block', method: 'block', params: { finality: 'final' } }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const data = await response.json();
+  if (!response.ok || data.error) throw new Error(JSON.stringify(data.error || { status: response.status }));
+  const timestampNs = BigInt(data.result.header.timestamp_nanosec);
+  return { blockHeight: data.result.header.height, timestampNs, day: timestampNs / 86_400_000_000_000n };
+}
+
+function describeError(error) {
+  const values = [error?.message, error?.cause?.message, error?.type, error?.name];
+  try { values.push(JSON.stringify(error)); } catch { /* non-serializable provider error */ }
+  return values.filter(Boolean).join('\n');
+}
+
+function findTransactionHash(value, depth = 0, insideTransaction = false) {
+  if (!value || typeof value !== 'object' || depth > 8) return null;
+  for (const [key, child] of Object.entries(value)) {
+    if (['transactionHash', 'transaction_hash'].includes(key) && typeof child === 'string') return child;
+    if (key === 'hash' && insideTransaction && typeof child === 'string' && /^[1-9A-HJ-NP-Za-km-z]{32,64}$/.test(child)) return child;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const result = findTransactionHash(child, depth + 1, insideTransaction || key === 'transaction');
+    if (result) return result;
+  }
+  return null;
+}
+
+async function expectOnChainReject(label, methodName, args, expectedFragment) {
+  try {
+    await agentAccount.callFunction({
+      contractId: gateId, methodName, args,
+      gas: 30_000_000_000_000n, deposit: 0n,
+    });
+  } catch (error) {
+    const diagnostic = describeError(error);
+    if (!diagnostic.toLowerCase().includes(expectedFragment.toLowerCase())) {
+      throw new Error(`${label} failed for an unexpected reason; this is NOT counted as a security pass.\n${diagnostic}`);
+    }
+    console.log(`PASS: ${label} [expected on-chain rejection]`);
+    return;
+  }
+  throw new Error(`SECURITY FAILURE: ${label} unexpectedly succeeded.`);
+}
+
+const agentAccount = new Account(agentId, provider, keyPair.toString());
+const gate = createNearApiJsGateAdapter({
+  account: agentAccount, provider, agentAccountId: agentId, gateAccountId: gateId,
+});
+
+const gateAccountBefore = await rpcQuery('view_account', gateId);
+assert.ok(gateAccountBefore.code_hash && gateAccountBefore.code_hash !== '11111111111111111111111111111111', 'Gate account has no deployed code.');
+const statusBefore = await gate.getStatus();
+const chainTimeBefore = await getFinalBlockDay();
+const nonceBefore = BigInt(statusBefore.next_nonce);
+const gateStoredDayBefore = BigInt(statusBefore.current_day);
+const spentStoredBefore = BigInt(statusBefore.spent_today_yocto);
+const effectiveSpentBefore = gateStoredDayBefore === chainTimeBefore.day ? spentStoredBefore : 0n;
+const dailyLimit = BigInt(statusBefore.daily_limit_yocto);
+if (amountWillExceedDailyBudget(effectiveSpentBefore, dailyLimit)) {
+  throw new Error('The Gate daily Testnet demo budget is exhausted for the current UTC day. Do not rerun the payment smoke test until the day resets or an owner changes the demo policy.');
+}
+assert.equal(statusBefore.owner_id, ownerId, 'Gate owner does not match.');
+assert.equal(statusBefore.agent_id, agentId, 'Gate agent account does not match.');
+assert.equal(statusBefore.agent_public_key, key.publicKey, 'Gate agent public key does not match.');
+assert.equal(statusBefore.paused, false, 'Gate must start unpaused.');
+assert.deepEqual(statusBefore.allowed_receivers, [vendorId], 'Unexpected Testnet recipient allowlist.');
+console.log('PASS: Testnet Gate status, owner, agent, key and recipient policy verified.');
+
+const amount = '100000000000000000000'; // 0.0001 NEAR
+const amountNumber = BigInt(amount);
+const vendorBalanceBefore = BigInt((await rpcQuery('view_account', vendorId)).amount);
+const expiry = (chainTimeBefore.timestampNs + 180_000_000_000n).toString();
+const paymentGuardFile = `${path.resolve(artifactFile)}.payment-attempt.json`;
+try {
+  const previous = JSON.parse(await readFile(paymentGuardFile, 'utf8'));
+  throw new Error(`Previous payment attempt exists (${previous.status}); inspect ${paymentGuardFile} before retrying.`);
+} catch (error) {
+  if (error.code !== 'ENOENT') throw error;
+}
+
+await mkdir(path.dirname(path.resolve(paymentGuardFile)), { recursive: true });
+
+const paymentAttempt = {
+  network: 'testnet', ownerId, gateId, agentId, vendorId,
+  amountNear: '0.0001',
+  nonce: nonceBefore.toString(),
+  status: 'PAYMENT_ATTEMPT_STARTED',
+  startedAt: new Date().toISOString(),
+};
+
+await writeFile(
+  paymentGuardFile,
+  `${JSON.stringify(paymentAttempt, null, 2)}\n`,
+  { mode: 0o600, flag: 'wx' }
+);
+
+const first = await gate.executePayment({
+  receiver_id: vendorId,
+  amount_yocto: amount,
+  nonce: nonceBefore.toString(),
+  expires_at_ns: expiry,
+  memo: 'NEARMARK Testnet authorised payment smoke test',
+});
+
+await writeFile(paymentGuardFile, `${JSON.stringify({
+  ...paymentAttempt,
+  status: 'PAYMENT_SUBMITTED',
+  transactionHash: findTransactionHash(first),
+  submittedAt: new Date().toISOString(),
+}, null, 2)}\n`, { mode: 0o600 });
+
+let statusAfter = await gate.getStatus();
+assert.equal(String(statusAfter.next_nonce), (nonceBefore + 1n).toString(), 'Gate nonce did not advance after approved payment.');
+const statusDayAfter = BigInt(statusAfter.current_day);
+const expectedSpentAfter = (statusDayAfter === gateStoredDayBefore ? spentStoredBefore : 0n) + amountNumber;
+assert.equal(String(statusAfter.spent_today_yocto), expectedSpentAfter.toString(), 'Gate daily spend ledger does not match this payment.');
+let vendorBalanceAfter = vendorBalanceBefore;
+for (let attempt = 0; attempt < 30; attempt += 1) {
+  vendorBalanceAfter = BigInt((await rpcQuery('view_account', vendorId)).amount);
+  if (vendorBalanceAfter - vendorBalanceBefore >= amountNumber) break;
+  await new Promise(resolve => setTimeout(resolve, 1_000));
+}
+assert.ok(vendorBalanceAfter > vendorBalanceBefore, 'Vendor did not receive the Testnet payment.');
+assert.ok(vendorBalanceAfter - vendorBalanceBefore >= amountNumber, 'Vendor balance increase is smaller than the approved payment.');
+console.log('PASS: Restricted FunctionCall key executed approved Testnet payment.');
+console.log('PASS: Vendor account received the exact authorised amount or more.');
+
+const attackChainTime = await getFinalBlockDay();
+const futureExpiry = (attackChainTime.timestampNs + 180_000_000_000n).toString();
+await expectOnChainReject('Prompt-injected unapproved recipient blocked', 'execute_payment', {
+  receiver_id: `attacker.${ownerId}`,
+  amount_yocto: amount,
+  nonce: (nonceBefore + 1n).toString(),
+  expires_at_ns: futureExpiry,
+  memo: 'NEARMARK negative test',
+}, 'recipient is not owner-approved');
+
+await expectOnChainReject('Replayed nonce blocked', 'execute_payment', {
+  receiver_id: vendorId,
+  amount_yocto: amount,
+  nonce: nonceBefore.toString(),
+  expires_at_ns: futureExpiry,
+  memo: 'NEARMARK replay negative test',
+}, 'invalid or replayed nonce');
+
+await expectOnChainReject('Per-payment amount limit blocked', 'execute_payment', {
+  receiver_id: vendorId,
+  amount_yocto: '1000000000000000000001',
+  nonce: (nonceBefore + 1n).toString(),
+  expires_at_ns: futureExpiry,
+  memo: 'NEARMARK over-limit negative test',
+}, 'per-payment limit exceeded');
+
+await expectOnChainReject('FunctionCall key cannot call owner-only pause method', 'set_paused', {
+  paused: true,
+}, 'MethodNameMismatch');
+
+statusAfter = await gate.getStatus();
+assert.equal(String(statusAfter.next_nonce), (nonceBefore + 1n).toString(), 'Rejected attempts must not consume the nonce.');
+assert.equal(statusAfter.paused, false, 'Gate should remain unpaused after rejected attempts.');
+
+const evidence = {
+  project: 'NEARMARK',
+  benchmark: 'NASB-0.1-testnet-smoke',
+  network: 'testnet',
+  rpc: RPC,
+  checkedAt: new Date().toISOString(),
+  gateBlockHeightAtCheck: gateAccountBefore.block_height,
+  finalBlockHeightAtPayment: chainTimeBefore.blockHeight,
+  gateDayBefore: gateStoredDayBefore.toString(),
+  gateDayAfter: statusDayAfter.toString(),
+  effectiveSpentBeforeYocto: effectiveSpentBefore.toString(),
+  nonceBefore: nonceBefore.toString(),
+  gateCodeHashOnChain: gateAccountBefore.code_hash,
+  ownerId, gateId, agentId, vendorId,
+  agentPublicKey: key.publicKey,
+  wasmSha256: process.env.NEARMARK_GATE_WASM_SHA256 || null,
+  approvedPayment: {
+    receiverId: vendorId,
+    amountYocto: amount,
+    amountNear: '0.0001',
+    nonce: nonceBefore.toString(),
+    transactionHash: findTransactionHash(first),
+    vendorBalanceBefore: vendorBalanceBefore.toString(),
+    vendorBalanceAfter: vendorBalanceAfter.toString(),
+    balanceDeltaYocto: (vendorBalanceAfter - vendorBalanceBefore).toString(),
+  },
+  negativeTests: [
+    'unapproved recipient', 'replayed nonce', 'per-payment amount limit',
+    'FunctionCall method scope',
+  ],
+  finalGateState: {
+    nextNonce: String(statusAfter.next_nonce),
+    spentTodayYocto: String(statusAfter.spent_today_yocto),
+    paused: statusAfter.paused,
+  },
+  limitations: [
+    'Testnet only; no Mainnet assets or signing were used.',
+    'This smoke suite is not an independent smart-contract security audit.',
+    'It tests the deployed Gate native-NEAR payment path, not FT/NFT or arbitrary contract calls.',
+  ],
+};
+await mkdir(path.dirname(path.resolve(artifactFile)), { recursive: true });
+await writeFile(artifactFile, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });
+
+const paymentJournal = JSON.parse(await readFile(paymentGuardFile, 'utf8'));
+await writeFile(paymentGuardFile, `${JSON.stringify({
+  ...paymentJournal,
+  status: 'COMPLETE',
+  transactionHash: evidence.approvedPayment.transactionHash,
+  evidenceFile: path.resolve(artifactFile),
+  completedAt: new Date().toISOString(),
+}, null, 2)}\n`, { mode: 0o600 });
+
+console.log(`PASS: Testnet evidence saved to ${path.resolve(artifactFile)}`);

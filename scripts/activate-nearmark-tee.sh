@@ -1,0 +1,433 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+cd "$HOME/NEARMARK-COMPLETE-BUILD/nearmark"
+
+source "$HOME/.nvm/nvm.sh"
+nvm use 24.22.1 >/dev/null
+
+export PATH="$HOME/.cargo/bin:$PATH"
+export NEAR_NETWORK=testnet
+export NEAR_RPC_URL=https://rpc.testnet.fastnear.com
+export NEAR_ARCHIVAL_RPC_URL=https://archival-rpc.testnet.fastnear.com
+export OUTLAYER_NETWORK=testnet
+
+OWNER=tony-nearmark-owner.testnet
+PROJECT=nearmark-nasb-receipt
+PROJECT_ID="$OWNER/$PROJECT"
+
+mkdir -p artifacts verification-logs
+chmod 700 artifacts
+
+EVIDENCE=artifacts/nearmark-testnet-evidence.json
+TEE_WASM=integrations/outlayer-worker/target/wasm32-wasip2/release/nearmark-outlayer-worker.wasm
+AI_EVIDENCE=artifacts/near-ai-tee-verification.json
+PROOF=artifacts/outlayer-proof-testnet.json
+SUMMARY=artifacts/outlayer-tee-verification.json
+ATTEMPT=artifacts/outlayer-testnet-attempt.json
+
+fail() {
+  echo "STOPPED: $*" >&2
+  exit 1
+}
+
+# FIX 1: Validate the actual evidence schema.
+# A missing transaction hash is not treated as a failed payment.
+
+python3 - "$EVIDENCE" <<'PY'
+import json,sys
+
+p=json.load(open(sys.argv[1]))
+
+assert p.get("network") == "testnet"
+assert p.get("ownerId") == "tony-nearmark-owner.testnet"
+assert p.get("gateId") == p.get("ownerId")
+
+a=p.get("approvedPayment") or {}
+
+amount=int(a.get("amountYocto") or 0)
+delta=int(a.get("balanceDeltaYocto") or 0)
+
+assert amount > 0
+assert delta >= amount
+
+assert len(p.get("negativeTests",[])) >= 4
+assert p.get("finalGateState",{}).get("paused") is False
+
+block=int(p.get("finalBlockHeightAtPayment") or 0)
+assert block > 0
+
+if not a.get("transactionHash"):
+    print("NOTICE: Transaction hash absent; not required by this receipt worker.")
+    print("Payment balance evidence and Gate execution state are validated.")
+
+print("PASS: Existing Testnet evidence verified.")
+print("PASS: Approved payment evidence verified.")
+print("PASS: Four security rejection tests verified.")
+print("PASS: Final Gate state verified.")
+PY
+
+# Read .env without displaying the secret.
+read_env() {
+python3 - "$1" <<'PY'
+import sys
+for line in open(".env",encoding="utf-8"):
+    if line.startswith(sys.argv[1]+"="):
+        print(line.split("=",1)[1].strip().strip('"\''))
+        break
+PY
+}
+
+write_env() {
+KEY="$1" VAL="$2" python3 <<'PY'
+import os
+from pathlib import Path
+
+p=Path(".env")
+k=os.environ["KEY"]
+v=os.environ["VAL"]
+
+lines=p.read_text().splitlines()
+lines=[x for x in lines if not x.startswith(k+"=")]
+lines.append(k+"="+v)
+
+p.write_text("\n".join(lines)+"\n")
+os.chmod(p,0o600)
+PY
+}
+
+[ -f .env ] || cp .env.example .env
+chmod 600 .env
+
+# ==============================================
+# 1. OFFICIAL NEAR AI TEE VERIFICATION
+# ==============================================
+
+AIKEY="$(read_env NEAR_AI_API_KEY)"
+
+if [ -z "$AIKEY" ]; then
+  read -r -s -p "NEAR AI Cloud API key (hidden): " AIKEY
+  echo
+fi
+
+[ -n "$AIKEY" ] || fail "NEAR AI API key required."
+
+write_env NEAR_AI_API_KEY "$AIKEY"
+export NEAR_AI_API_KEY="$AIKEY"
+unset AIKEY
+
+if [ ! -d node_modules/@nearai/inference-sdk ]; then
+  npm ci --no-audit --no-fund
+fi
+
+echo
+echo "NEAR AI: VERIFYING MODEL ATTESTATION..."
+
+if [ -s "$AI_EVIDENCE" ] && python3 -c "import json,sys; x=json.load(open(sys.argv[1])); sys.exit(0 if x.get('status')=='VERIFIED' and x.get('verification',{}).get('signatureKind')=='provider_tee' else 1)" "$AI_EVIDENCE"; then
+  echo "PASS: Existing NEAR AI TEE evidence reused."
+else
+  node scripts/run-near-ai-tee-resilient.mjs
+fi
+
+MODEL="$(python3 -c "import json;print(json.load(open('$AI_EVIDENCE'))['model')")"
+write_env NEAR_AI_MODEL "$MODEL"
+
+# ==============================================
+# 2. BUILD OUTLAYER WORKER
+# ==============================================
+
+echo
+echo "OUTLAYER: BUILDING WASI PREVIEW 2 WORKER..."
+
+if [ ! -s "$TEE_WASM" ] ||
+   [ integrations/outlayer-worker/src/main.rs -nt "$TEE_WASM" ]; then
+
+  rustup target add wasm32-wasip2 --toolchain stable
+
+  cargo +stable build --locked \
+    --manifest-path integrations/outlayer-worker/Cargo.toml \
+    --target wasm32-wasip2 \
+    --release
+fi
+
+[ -s "$TEE_WASM" ] || fail "Worker WASM missing."
+
+# Local source provenance.
+git check-ignore -q .env ||
+  fail ".env must be Git-ignored before source snapshot."
+
+git ls-files --error-unmatch .env >/dev/null 2>&1 &&
+  fail ".env is already tracked by Git."
+
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  git init -q -b main
+fi
+
+git add -A
+
+if ! git diff --cached --quiet; then
+  GIT_AUTHOR_NAME="NEARMARK Evidence" \
+  GIT_AUTHOR_EMAIL="nearmark@users.noreply.github.com" \
+  GIT_COMMITTER_NAME="NEARMARK Evidence" \
+  GIT_COMMITTER_EMAIL="nearmark@users.noreply.github.com" \
+  git commit -qm "NEARMARK OutLayer source snapshot"
+fi
+
+COMMIT="$(git rev-parse HEAD)"
+GATE_SHA="$(sha256sum contracts/near-gate/target/near/nearmark_gate.wasm | awk '{print $1}')"
+TEE_SHA="$(sha256sum "$TEE_WASM" | awk '{print $1}')"
+EVIDENCE_SHA="$(sha256sum "$EVIDENCE" | awk '{print $1}')"
+
+COMMIT="$COMMIT" GATE_SHA="$GATE_SHA" EVIDENCE_SHA="$EVIDENCE_SHA" \
+python3 <<'PY'
+import json,hashlib,os
+
+p=json.load(open("artifacts/nearmark-testnet-evidence.json"))
+
+def sha(v):
+    return hashlib.sha256(v.encode()).hexdigest()
+
+config={
+ "network":"testnet",
+ "owner":p["ownerId"],
+ "gate":p["gateId"],
+ "agent":p["agentId"],
+ "vendor":p["vendorId"],
+ "gate_code_hash":p["gateCodeHashOnChain"],
+ "max_payment_yocto":"1000000000000000000000",
+ "daily_limit_yocto":"2000000000000000000000"
+}
+
+obj={
+ "suite_version":"NASB-0.1",
+ "source_commit":os.environ["COMMIT"],
+ "config_sha256":sha(json.dumps(config,sort_keys=True,separators=(",",":"))),
+ "contract_wasm_sha256":os.environ["GATE_SHA"],
+ "evidence_manifest_sha256":os.environ["EVIDENCE_SHA"],
+ "block_height":int(p["finalBlockHeightAtPayment"]),
+ "scenario_count":1+len(p["negativeTests"])
+}
+
+assert len(obj["source_commit"])==40
+assert obj["block_height"]>0
+assert 1<=obj["scenario_count"]<=100
+
+with open("artifacts/outlayer-input.json","w") as f:
+    json.dump(obj,f,sort_keys=True,separators=(",",":"))
+    f.write("\n")
+
+os.chmod("artifacts/outlayer-input.json",0o600)
+print("PASS: OutLayer receipt input generated.")
+PY
+
+# ==============================================
+# 3. OUTLAYER CLI AUTHENTICATION
+# ==============================================
+
+if ! command -v outlayer >/dev/null 2>&1; then
+  cargo install outlayer-cli
+fi
+
+if ! command -v outlayer-verify >/dev/null 2>&1; then
+  cargo install --locked --git \
+    https://github.com/out-layer/outlayer-verify \
+    outlayer-verify
+fi
+
+WHO="$(OUTLAYER_NETWORK=testnet outlayer whoami 2>&1 || true)"
+
+if ! grep -Fq "$OWNER" <<<"$WHO"; then
+  echo "Log in using your OWNER Full Access Testnet key."
+  echo "Do not use the restricted agent key."
+  OUTLAYER_NETWORK=testnet outlayer login testnet
+fi
+
+WHO="$(OUTLAYER_NETWORK=testnet outlayer whoami 2>&1 || true)"
+grep -Fq "$OWNER" <<<"$WHO" ||
+  fail "OutLayer Testnet login does not match the owner account."
+
+echo "PASS: OutLayer Testnet owner authenticated."
+
+[ ! -s "$SUMMARY" ] || fail "Existing OutLayer evidence found."
+[ ! -s "$PROOF" ] || fail "Existing proof bundle found."
+[ ! -s "$ATTEMPT" ] || fail "Previous execution attempt exists. Inspect it; do not repeat."
+
+# ==============================================
+# 4. UPLOAD AND PUBLISH EXACT WASM
+# ==============================================
+
+UPLOAD_LOG="verification-logs/outlayer-upload-$(date -u +%Y%m%d-%H%M%S).log"
+
+OUT="$(OUTLAYER_NETWORK=testnet outlayer upload "$TEE_WASM" 2>&1 | tee "$UPLOAD_LOG")"
+
+URL="$(grep -Eo 'https://[^[:space:]\"<>]+\.wasm' <<<"$OUT" | tail -n1 | sed 's/[),]$//')"
+
+[ -n "$URL" ] || fail "OutLayer upload URL unavailable."
+
+[ "$(basename "$URL" .wasm)" = "$TEE_SHA" ] ||
+  fail "Uploaded WASM URL hash mismatch."
+
+echo "PASS: OutLayer WASM uploaded and hash-pinned."
+
+OUTLAYER_NETWORK=testnet outlayer deploy "$PROJECT" "$URL" \
+  2>&1 | tee "verification-logs/outlayer-deploy-$(date -u +%Y%m%d-%H%M%S).log"
+
+# ==============================================
+# 5. PREPARE ONE TESTNET EXECUTION
+# ==============================================
+
+ARGS="$(python3 - "$PROJECT_ID" "$TEE_SHA" <<'PY'
+import json,sys
+
+project,version=sys.argv[1:]
+input_data=json.load(open("artifacts/outlayer-input.json"))
+
+print(json.dumps({
+ "source":{"Project":{"project_id":project,"version_key":version}},
+ "input_data":json.dumps(input_data,sort_keys=True,separators=(",",":")),
+ "resource_limits":{
+   "max_instructions":1000000000,
+   "max_memory_mb":128,
+   "max_execution_seconds":60
+ },
+ "response_format":"Json"
+},separators=(",",":")))
+PY
+)"
+
+python3 - "$ATTEMPT" "$PROJECT_ID" "$TEE_SHA" "$URL" <<'PY'
+import json,sys,os,datetime
+
+p,project,wasm,url=sys.argv[1:]
+
+x={
+ "network":"testnet",
+ "project_id":project,
+ "worker_wasm_sha256":wasm,
+ "worker_url":url,
+ "status":"PREPARED_NOT_SUBMITTED",
+ "created_at":datetime.datetime.now(datetime.timezone.utc).isoformat()
+}
+
+with open(p,"x") as f:
+    json.dump(x,f,indent=2)
+
+os.chmod(p,0o600)
+PY
+
+cat <<NOTICE
+
+NEARMARK OUTLAYER TESTNET EXECUTION
+
+Project: $PROJECT_ID
+Worker SHA-256: $TEE_SHA
+Attached deposit cap: 0.1 Testnet NEAR
+Unused execution deposit is refunded according to OutLayer pricing.
+
+The worker performs canonical receipt signing only.
+It does NOT execute the NASB attacks.
+
+No Mainnet transactions will be submitted.
+NOTICE
+
+read -r -p "Type RUN NEARMARK TEE TESTNET to authorize: " CONFIRM
+
+[ "$CONFIRM" = "RUN NEARMARK TEE TESTNET" ] ||
+  fail "Execution cancelled."
+
+# ==============================================
+# 6. REAL OUTLAYER TEE EXECUTION
+# ==============================================
+
+TX_LOG="verification-logs/outlayer-execution-$(date -u +%Y%m%d-%H%M%S).log"
+
+near contract call-function as-transaction outlayer.testnet request_execution \
+  json-args "$ARGS" \
+  prepaid-gas '300 Tgas' \
+  attached-deposit '0.1 NEAR' \
+  sign-as "$OWNER" \
+  network-config testnet \
+  sign-with-legacy-keychain send 2>&1 | tee "$TX_LOG"
+
+TX="$(grep -Eo 'Transaction (ID|hash):[[:space:]]*[1-9A-HJ-NP-Za-km-z]{40,50}' "$TX_LOG" |
+  tail -n1 | sed -E 's/.*:[[:space:]]*//')"
+
+[ -n "$TX" ] || fail "Transaction hash not captured. Inspect $TX_LOG. Do not resubmit."
+
+TX="$TX" python3 - "$ATTEMPT" <<'PY'
+import json,sys,os
+p=sys.argv[1]
+x=json.load(open(p))
+x.update(status="TRANSACTION_SUBMITTED",transaction_hash=os.environ["TX"])
+json.dump(x,open(p,"w"),indent=2)
+PY
+
+# ==============================================
+# 7. INDEPENDENT INTEL TDX VERIFICATION
+# ==============================================
+
+VERIFY_LOG="verification-logs/outlayer-verify-$(date -u +%Y%m%d-%H%M%S).log"
+
+outlayer-verify tx "$TX" \
+  --network testnet \
+  --rpc "$NEAR_RPC_URL" \
+  --archival-rpc "$NEAR_ARCHIVAL_RPC_URL" \
+  --bundle "$PROOF" 2>&1 | tee "$VERIFY_LOG"
+
+[ -s "$PROOF" ] || fail "Independent verifier did not create its proof bundle."
+
+# Offline re-verification.
+outlayer-verify bundle "$PROOF" --offline \
+  2>&1 | tee "verification-logs/outlayer-offline-verify.log"
+
+# ==============================================
+# 8. SAVE FINAL EVIDENCE
+# ==============================================
+
+TX="$TX" URL="$URL" TEE_SHA="$TEE_SHA" COMMIT="$COMMIT" \
+GATE_SHA="$GATE_SHA" EVIDENCE_SHA="$EVIDENCE_SHA" \
+python3 <<'PY'
+import json,os,datetime
+
+x={
+ "project":"NEARMARK",
+ "network":"testnet",
+ "status":"OUTLAYER_TEE_VERIFIED",
+ "project_id":"tony-nearmark-owner.testnet/nearmark-nasb-receipt",
+ "worker_wasm_sha256":os.environ["TEE_SHA"],
+ "worker_url":os.environ["URL"],
+ "source_commit":os.environ["COMMIT"],
+ "gate_wasm_sha256":os.environ["GATE_SHA"],
+ "gate_evidence_sha256":os.environ["EVIDENCE_SHA"],
+ "transaction_hash":os.environ["TX"],
+ "proof_bundle":"artifacts/outlayer-proof-testnet.json",
+ "verification":"Independent outlayer-verify plus offline bundle verification",
+ "execution_scope":"TEE_EXECUTED_CANONICAL_RECEIPT_SIGNING_ONLY",
+ "semantic_claims_verified":False,
+ "near_ai_evidence":"artifacts/near-ai-tee-verification.json",
+ "verified_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),
+ "limitations":[
+  "TEE attestation does not prove program correctness.",
+  "The worker signs the benchmark receipt; it does not execute the NASB attack scenarios."
+ ]
+}
+
+with open("artifacts/outlayer-tee-verification.json","w") as f:
+    json.dump(x,f,indent=2)
+
+os.chmod("artifacts/outlayer-tee-verification.json",0o600)
+
+p="artifacts/outlayer-testnet-attempt.json"
+a=json.load(open(p))
+a.update(status="VERIFIED",transaction_hash=os.environ["TX"])
+json.dump(a,open(p,"w"),indent=2)
+PY
+
+echo
+echo "=========================================="
+echo " NEARMARK TEE WORKFLOW FINISHED"
+echo "=========================================="
+echo "NEAR AI: $AI_EVIDENCE"
+echo "OutLayer proof: $PROOF"
+echo "OutLayer summary: $SUMMARY"
+echo "Transaction: $TX"

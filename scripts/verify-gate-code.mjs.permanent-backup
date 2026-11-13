@@ -1,0 +1,39 @@
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+
+const [accountId, wasmPath] = process.argv.slice(2);
+if (!accountId || !wasmPath || !accountId.endsWith('.testnet')) {
+  console.error('Usage: node verify-gate-code.mjs <gate.testnet> <local-gate.wasm>');
+  process.exit(2);
+}
+const rpc = process.env.NEAR_RPC_URL || 'https://rpc.testnet.near.org';
+const wasm = await readFile(wasmPath);
+const digest = createHash('sha256').update(wasm).digest();
+const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+let value = BigInt(`0x${digest.toString('hex')}`);
+let encoded = '';
+while (value > 0n) {
+  const remainder = Number(value % 58n);
+  encoded = alphabet[remainder] + encoded;
+  value /= 58n;
+}
+let leadingZeroes = 0;
+while (leadingZeroes < digest.length && digest[leadingZeroes] === 0) leadingZeroes += 1;
+const expectedCodeHash = '1'.repeat(leadingZeroes) + encoded;
+
+const response = await fetch(rpc, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    jsonrpc: '2.0', id: 'nearmark-verify-gate-code', method: 'query',
+    params: { request_type: 'view_account', finality: 'final', account_id: accountId },
+  }),
+  signal: AbortSignal.timeout(20000),
+});
+const data = await response.json();
+if (!response.ok || data.error) throw new Error(JSON.stringify(data.error || { status: response.status }));
+const deployedCodeHash = data.result.code_hash;
+if (deployedCodeHash !== expectedCodeHash) {
+  throw new Error(`Deployed code hash mismatch. Expected ${expectedCodeHash}; chain reports ${deployedCodeHash}.`);
+}
+console.log(JSON.stringify({ accountId, codeHash: deployedCodeHash, verified: true }));

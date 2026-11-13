@@ -1,0 +1,15 @@
+[package]
+name = "nearmark-gate-ft"
+version = "0.2.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "NEARMARK owner-mandated NEP-141 fungible-token payment gate"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = { version = "=5.30.1" }
+
+[dev-dependencies]
+near-sdk = { version = "=5.30.1", features = ["unit-testing"] }

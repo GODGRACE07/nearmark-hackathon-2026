@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+export PATH="$HOME/.cargo/bin:$PATH"
+LOG_DIR="$ROOT/verification-logs"
+mkdir -p "$LOG_DIR" "$ROOT/artifacts"
+LOG="$LOG_DIR/testnet-deploy-$(date -u +%Y%m%d-%H%M%S).log"
+echo "Testnet deploy log: $LOG"
+WASM="$ROOT/contracts/near-gate/target/near/nearmark_gate.wasm"
+[ -s "$WASM" ] || { echo 'Native Gate WASM missing; run full build first.'; exit 1; }
+WASM_HASH="$(sha256sum "$WASM" | awk '{print $1}')"
+fail() { echo "STOPPED: $1"; echo "Log: $LOG"; exit 1; }
+export NEAR_NETWORK=testnet
+export NEAR_RPC_URL=https://rpc.testnet.fastnear.com
+export NEAR_RPC_FALLBACK_URL=https://rpc.testnet.near.org
+export FASTNEAR_TX_API=https://tx.test.fastnear.com/v0/account
+
+# Optional one-click deployment to the user's own disposable Testnet subaccounts.
+echo "Testnet deployment and live on-chain smoke test"
+OWNER_DEFAULT="tony-nearmark-owner.testnet"
+read -r -p "Owner Testnet account [$OWNER_DEFAULT]: " OWNER
+OWNER="${OWNER:-$OWNER_DEFAULT}"
+[[ "$OWNER" =~ ^[a-z0-9._-]+\.testnet$ ]] || fail "Owner must be a valid .testnet account ID."
+
+OWNER_KEY="$(near account get-public-key from-legacy-keychain "$OWNER" network-config testnet 2>/dev/null | grep -Eo 'ed25519:[1-9A-HJ-NP-Za-km-z]+' | head -n1 || true)"
+[ -n "$OWNER_KEY" ] || fail "Could not read the owner's legacy-keychain public key. The owner account was not changed."
+
+BALANCE_JSON="$(node scripts/near-testnet-rpc.mjs balance "$OWNER")" || fail "Could not verify owner Testnet balance."
+OWNER_BALANCE_YOCTO="$(node -e 'const v=JSON.parse(process.argv[1]);console.log(v.balanceYocto)' "$BALANCE_JSON")"
+MIN_BALANCE="2000000000000000000000000"
+[ "$(node -e 'console.log(BigInt(process.argv[1])>=BigInt(process.argv[2])?"yes":"no")' "$OWNER_BALANCE_YOCTO" "$MIN_BALANCE")" = yes ] || fail "Owner Testnet balance must be at least 2 NEAR for this setup."
+echo "PASS: Owner key verified; balance is $(node -e 'const n=BigInt(process.argv[1]); console.log((n/10n**24n)+"."+(n%10n**24n).toString().padStart(24,"0").slice(0,4))' "$OWNER_BALANCE_YOCTO") NEAR."
+[ "$(node scripts/near-testnet-rpc.mjs owner-key "$OWNER" "$OWNER_KEY")" = OWNER_FULL_ACCESS ] || fail "Owner signing key is not present on-chain as Full Access. The account was not changed."
+echo "PASS: Owner key is present on-chain with Full Access recovery rights."
+
+GATE="$OWNER" # This fresh owner account is the dedicated Gate/custody account.
+GATE_CODE_HASH="$(node scripts/near-testnet-rpc.mjs code-hash "$GATE")" || fail "Could not inspect Gate account code state."
+if [ "$GATE_CODE_HASH" != "11111111111111111111111111111111" ]; then
+  echo "Gate account already contains contract code; verifying it matches this exact local WASM before spending or changing accounts..."
+  node scripts/verify-gate-code.mjs "$GATE" "$WASM" >/dev/null || fail "Existing Gate code hash does not match this release WASM; refusing to overwrite or continue."
+  node --input-type=module - "$GATE" "$OWNER" <<'NODE' || fail "Existing contract is not a NEARMARK Gate owned by this account; refusing to continue."
+import { JsonRpcProvider } from 'near-api-js';
+const [gate, owner] = process.argv.slice(2);
+const provider = new JsonRpcProvider({url: process.env.NEAR_RPC_URL});
+const state = await provider.callFunction({contractId:gate,method:'get_status',args:{}});
+if(state.owner_id!==owner) throw new Error('Existing Gate owner does not match the owner account.');
+console.log('PASS: Existing Gate owner matches.');
+NODE
+fi
+
+cat <<'NOTICE'
+
+TESTNET ACTION PLAN
+- Keep the owner's Full Access recovery key in the local legacy keychain.
+- Create/reuse two Testnet subaccounts (0.7 NEAR total initial funding).
+- Install one new agent key restricted to this Gate's execute_payment method.
+- Deploy/initialize the native-NEAR Gate on the owner account if it is empty.
+- Send one 0.0001 NEAR Testnet payment and run negative authorization tests.
+- No Mainnet keys, funds, or transactions are used.
+NOTICE
+if [ "${NEARMARK_TESTNET_AUTHORIZED:-}" != "1" ]; then
+  read -r -p "Type DEPLOY TESTNET to authorize these Testnet transactions: " DEPLOY_CONFIRM
+  [ "$DEPLOY_CONFIRM" = "DEPLOY TESTNET" ] || fail "Testnet actions were not authorized; no subaccounts or contract were changed."
+else
+  echo 'PASS: Testnet write authorization was explicitly confirmed in the parent release runner.'
+fi
+
+AGENT="agent.$OWNER"
+VENDOR="vendor.$OWNER"
+KEY_DIR="$HOME/.nearmark/keys"
+KEY_FILE="$KEY_DIR/nearmark-$AGENT-function-call.json"
+ARTIFACT="$ROOT/artifacts/nearmark-testnet-evidence.json"
+mkdir -p "$ROOT/artifacts" "$KEY_DIR"
+chmod 700 "$KEY_DIR"
+
+if [ "$(node scripts/near-testnet-rpc.mjs exists "$AGENT")" = MISSING ]; then
+  echo "Creating separate agent subaccount with 0.5 NEAR initial balance..."
+  near account create-account fund-myself "$AGENT" '0.5 NEAR' \
+    autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain \
+    sign-as "$OWNER" network-config testnet sign-with-legacy-keychain send || fail "Agent subaccount creation"
+else
+  echo "Agent subaccount already exists: $AGENT"
+fi
+
+if [ "$(node scripts/near-testnet-rpc.mjs exists "$VENDOR")" = MISSING ]; then
+  echo "Creating Testnet vendor recipient with 0.2 NEAR initial balance..."
+  near account create-account fund-myself "$VENDOR" '0.2 NEAR' \
+    autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain \
+    sign-as "$OWNER" network-config testnet sign-with-legacy-keychain send || fail "Vendor subaccount creation"
+else
+  echo "Vendor recipient already exists: $VENDOR"
+fi
+
+
+# Keep the agent FunctionCall private key outside the project and never print it.
+if [ ! -s "$KEY_FILE" ]; then
+  PUBLIC_KEY="$(node contracts/near-gate/near-api-js-integration/keygen-testnet.mjs create "$KEY_FILE")" || fail "FunctionCall key generation"
+else
+  PUBLIC_KEY="$(node contracts/near-gate/near-api-js-integration/keygen-testnet.mjs show "$KEY_FILE")" || fail "Existing FunctionCall key validation"
+fi
+chmod 600 "$KEY_FILE"
+echo "PASS: Restricted agent key material stored outside the repository: $KEY_FILE"
+
+if [ "$GATE_CODE_HASH" != "11111111111111111111111111111111" ]; then
+  node --input-type=module - "$GATE" "$OWNER" "$AGENT" "$PUBLIC_KEY" "$VENDOR" <<'NODE' || fail "Existing Gate policy does not exactly match this release; no policy was changed."
+import assert from 'node:assert/strict';
+import { JsonRpcProvider } from 'near-api-js';
+const [gate, owner, agent, publicKey, vendor] = process.argv.slice(2);
+const provider = new JsonRpcProvider({url: process.env.NEAR_RPC_URL || 'https://rpc.testnet.near.org'});
+const state = await provider.callFunction({contractId:gate,method:'get_status',args:{}});
+assert.equal(state.owner_id, owner, 'owner mismatch');
+assert.equal(state.agent_id, agent, 'agent mismatch');
+assert.equal(state.agent_public_key, publicKey, 'restricted key mismatch');
+assert.deepEqual(state.allowed_receivers, [vendor], 'recipient policy mismatch');
+assert.equal(String(state.max_payment_yocto), '1000000000000000000000', 'per-payment cap mismatch');
+assert.equal(String(state.daily_limit_yocto), '2000000000000000000000', 'daily cap mismatch');
+assert.equal(state.paused, false, 'Gate is paused');
+console.log('PASS: Existing Testnet Gate identity and spending policy exactly match this release.');
+NODE
+fi
+
+KEY_STATE="$(node scripts/near-testnet-rpc.mjs access-key "$AGENT" "$PUBLIC_KEY" "$GATE")" || fail "Existing FunctionCall key has an unexpected permission scope. No key was removed."
+if [ "$KEY_STATE" = MISSING ]; then
+  echo "Installing a key restricted to the single method Gate.execute_payment..."
+  near account add-key "$AGENT" \
+    grant-function-call-access \
+      --allowance '0.2 NEAR' \
+      --contract-account-id "$GATE" \
+      --function-names 'execute_payment' \
+    use-manually-provided-public-key "$PUBLIC_KEY" \
+    network-config testnet sign-with-legacy-keychain send || fail "Installing restricted FunctionCall key"
+fi
+[ "$(node scripts/near-testnet-rpc.mjs access-key "$AGENT" "$PUBLIC_KEY" "$GATE")" = EXACT_FUNCTION_CALL_SCOPE ] || fail "On-chain FunctionCall permissions do not exactly match Gate.execute_payment."
+echo "PASS: On-chain key is scoped only to $GATE.execute_payment."
+
+INIT_JSON="$(node -e 'console.log(JSON.stringify({owner_id:process.argv[1],agent_id:process.argv[2],agent_public_key:process.argv[3],allowed_receivers:[process.argv[4]],max_payment_yocto:"1000000000000000000000",daily_limit_yocto:"2000000000000000000000"}))' "$OWNER" "$AGENT" "$PUBLIC_KEY" "$VENDOR")"
+if [ "$GATE_CODE_HASH" = "11111111111111111111111111111111" ]; then
+  echo "Deploying the NEARMARK Gate contract and initializing its owner policy..."
+  near contract deploy "$GATE" use-file "$WASM" \
+    with-init-call new json-args "$INIT_JSON" \
+    prepaid-gas '100 TGas' attached-deposit '0 NEAR' \
+    network-config testnet sign-with-legacy-keychain send || fail "Gate deploy and initialization"
+else
+  echo "Gate account already has deployed code. Verifying existing state before any modification..."
+  node --input-type=module - "$GATE" "$OWNER" "$AGENT" "$PUBLIC_KEY" <<'NODE' || fail "Existing Gate contract does not match this deployment; refusing to overwrite it."
+import { JsonRpcProvider } from 'near-api-js';
+const [gate, owner, agent, key] = process.argv.slice(2);
+const provider = new JsonRpcProvider({url: process.env.NEAR_RPC_URL || 'https://rpc.testnet.near.org'});
+const state = await provider.callFunction({contractId:gate,method:'get_status',args:{}});
+if(state.owner_id!==owner || state.agent_id!==agent || state.agent_public_key!==key) throw new Error('Existing Gate identity does not match requested accounts/key.');
+console.log('PASS: Existing Gate identity matches.');
+NODE
+fi
+
+# Confirm exact deployed WASM bytes, then public permissions and live behavior.
+node scripts/verify-gate-code.mjs "$GATE" "$WASM" >/dev/null || fail "Deployed Testnet Gate code hash differs from the locally built WASM."
+echo "PASS: Testnet Gate code hash exactly matches local WASM SHA-256."
+NEARMARK_GATE_WASM_SHA256="$WASM_HASH" node contracts/near-gate/near-api-js-integration/testnet-smoke.mjs \
+  "$OWNER" "$GATE" "$AGENT" "$VENDOR" "$KEY_FILE" "$ARTIFACT" || fail "Live Testnet Gate smoke test"
+
+echo ""
+echo "===================================================="
+echo " NEARMARK ONE-CLICK RELEASE COMPLETE"
+echo "===================================================="
+echo "Application: production frontend build completed (not hosted)"
+echo "Unit tests: passed"
+echo "Local NEAR Sandbox: passed"
+echo "Testnet Gate: deployed/verified and payment smoke test passed"
+echo "Gate contract account: $GATE"
+echo "Agent: $AGENT"
+echo "Approved Testnet vendor: $VENDOR"
+echo "Owner: $OWNER"
+echo "WASM SHA-256: $WASM_HASH"
+echo "Evidence: $ARTIFACT"
+echo "FunctionCall private key: kept outside this repository"
+echo "No Mainnet transaction was performed."
+echo ""

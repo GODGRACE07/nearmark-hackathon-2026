@@ -1,0 +1,53 @@
+{
+  "name": "nearmark",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Evidence-first security inspection and reproducible agent-wallet benchmarking for NEAR",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:web": "vite --host 0.0.0.0",
+    "dev:api": "node --env-file-if-exists=.env --watch server/index.mjs",
+    "start": "node --env-file-if-exists=.env server/index.mjs",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --test server/*.test.mjs packages/sdk/*.test.mjs",
+    "typecheck": "tsc --noEmit --pretty",
+    "cli": "node packages/cli/index.mjs",
+    "mcp": "node packages/mcp/server.mjs",
+    "start:api": "node --env-file-if-exists=.env server/index.mjs",
+    "check": "npm test && npm run test:outlayer && npm run build && npm run test:api-dispatch",
+    "test:api-dispatch": "node scripts/api-dispatch-regression.mjs",
+    "test:outlayer": "node --test integrations/outlayer-worker/verify-receipt.test.mjs"
+  },
+  "dependencies": {
+    "@agents-market/market": "^0.1.9",
+    "@nearai/inference-sdk": "^0.3.0",
+    "@supabase/supabase-js": "^2.119.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "lucide-react": "^1.61.0",
+    "motion": "^14.10.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.5",
+    "stripe": "^23.1.0",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/three": "^0.187.0",
+    "concurrently": "^9.2.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6"
+  },
+  "engines": {
+    "node": ">=24.22.1"
+  },
+  "workspaces": [
+    "packages/sdk",
+    "packages/cli",
+    "packages/mcp"
+  ]
+}

@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: nearmark-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm ci
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.22.1
+      - key: NEAR_NETWORK
+        value: testnet
+      - key: NEAR_RPC_URL
+        value: https://rpc.testnet.near.org
+      - key: NEAR_RPC_FALLBACK_URL
+        value: https://rpc.testnet.fastnear.com
+      - key: ALLOWED_ORIGIN
+        value: https://nearmark.pages.dev
+      - key: NEARMARK_REQUIRE_AUTH
+        value: "false"
+      - key: NEAR_AI_MODEL
+        value: deepseek-ai/DeepSeek-V4.1-Flash-1017
+      - key: NEAR_AI_BASE_URL
+        value: https://cloud-api.near.ai/v1/
+      - key: NEAR_AI_PCCS_URL
+        value: https://api.trustedservices.intel.com
+      - key: NEAR_AI_NRAS_URL
+        value: https://nras.attestation.nvidia.com/v3/attest/gpu
+      - key: OUTLAYER_NETWORK
+        value: testnet
+      - key: OUTLAYER_API_URL
+        value: https://testnet-api.outlayer.ai
+      - key: OUTLAYER_ENABLE_MUTATIONS
+        value: "false"

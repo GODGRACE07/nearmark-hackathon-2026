@@ -1,0 +1,17 @@
+{
+  "name": "@nearmark/sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./index.mjs",
+  "exports": {
+    ".": "./index.mjs"
+  },
+  "description": "Typed-by-JSDoc HTTP client for the Nearmark security API",
+  "license": "MIT",
+  "types": "./index.d.ts",
+  "files": [
+    "index.mjs",
+    "index.d.ts",
+    "README.md"
+  ]
+}

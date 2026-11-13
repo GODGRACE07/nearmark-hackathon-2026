@@ -1,0 +1,334 @@
+import { setDefaultResultOrder } from 'node:dns';
+import { createHash } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
+setDefaultResultOrder('ipv4first');
+
+import { InferenceClient } from '@nearai/inference-sdk/node';
+
+import {
+  createTdxQuoteVerifier,
+  createGpuEvidenceVerifier
+} from '@nearai/inference-sdk';
+
+process.loadEnvFile('.env');
+
+const API_KEY = process.env.NEAR_AI_API_KEY;
+
+const BASE_URL =
+  process.env.NEAR_AI_BASE_URL ||
+  'https://cloud-api.near.ai/v1/';
+
+const PCCS_URL =
+  process.env.NEAR_AI_PCCS_URL ||
+  'https://api.trustedservices.intel.com';
+
+const NRAS_URL =
+  process.env.NEAR_AI_NRAS_URL ||
+  'https://nras.attestation.nvidia.com/v3/attest/gpu';
+
+if (!API_KEY) {
+  throw new Error('NEAR_AI_API_KEY is missing from .env');
+}
+
+function showError(error) {
+  let current = error;
+  let depth = 0;
+
+  while (current && depth < 8) {
+    console.error(
+      `ERROR ${depth + 1}:`,
+      current.name || 'Error',
+      current.code || current.failure?.code || '',
+      current.message || String(current)
+    );
+
+    current = current.cause;
+    depth++;
+  }
+}
+
+// Use NEAR AI's official collateral proxies instead of the
+// direct Intel/NVIDIA defaults used by the Node.js SDK.
+
+const tdxQuoteVerifier = createTdxQuoteVerifier({
+  pccsUrl: PCCS_URL
+});
+
+const gpuEvidenceVerifier = createGpuEvidenceVerifier({
+  nrasUrl: NRAS_URL
+});
+
+const client = new InferenceClient({
+  apiKey: API_KEY,
+  baseUrl: BASE_URL,
+
+  e2ee: true,
+  ohttp: false,
+
+  attestationCacheTimeToLiveMs: 0,
+
+  gatewayVerification: {
+    verifiers: {
+      tdxQuote: tdxQuoteVerifier
+    }
+  },
+
+  modelVerification: {
+    verifiers: {
+      tdxQuote: tdxQuoteVerifier,
+      gpuEvidence: gpuEvidenceVerifier
+    }
+  }
+});
+
+function collectModels(value, output = new Set()) {
+  if (Array.isArray(value)) {
+    for (const item of value) collectModels(item, output);
+  } else if (typeof value === 'object' && value !== null) {
+    for (const key of [
+      'id', 'model', 'model_id', 'modelId'
+    ]) {
+      const v = value[key];
+
+      if (typeof v === 'string' && /^[\w.-]+\/[\w.-]+$/.test(v)) {
+        output.add(v);
+      }
+    }
+
+    for (const [key, item] of Object.entries(value)) {
+      if (/^[\w.-]+\/[\w.-]+$/.test(key)) {
+        output.add(key);
+      }
+
+      collectModels(item, output);
+    }
+  } else if (
+    typeof value === 'string' &&
+    /^[\w.-]+\/[\w.-]+$/.test(value)
+  ) {
+    output.add(value);
+  }
+
+  return [...output];
+}
+
+function isVerifierFailure(error) {
+  let current = error;
+  let text = '';
+
+  while (current) {
+    text += ' ' + [
+      current.message,
+      current.code,
+      current.failure?.code
+    ].filter(Boolean).join(' ');
+
+    current = current.cause;
+  }
+
+  return /verifier_error|quote\.verification_failed|TDX quote/i.test(text);
+}
+
+async function main() {
+  console.log('\nNEAR AI CONFIGURATION');
+
+  console.log('Gateway:', BASE_URL);
+  console.log('TDX collateral:', PCCS_URL);
+  console.log('GPU evidence:', NRAS_URL);
+  console.log('API key:', 'CONFIGURED');
+
+  // Discover currently published model IDs.
+  const catalogResponse = await fetch(
+    new URL('model/list', BASE_URL),
+    {
+      headers: {
+        Authorization: `Bearer ${API_KEY}`
+      },
+      signal: AbortSignal.timeout(30000)
+    }
+  );
+
+  if (!catalogResponse.ok) {
+    throw new Error(
+      `Model catalogue returned HTTP ${catalogResponse.status}`
+    );
+  }
+
+  const catalogue = await catalogResponse.json();
+  const catalogModels = collectModels(catalogue);
+
+  console.log(
+    'Live catalogue model IDs discovered:',
+    catalogModels.length
+  );
+
+  const preferred = process.env.NEAR_AI_MODEL || '';
+
+  const candidates = [
+    ...new Set([
+      preferred,
+      ...catalogModels.filter(
+        x => /deepseek|qwen/i.test(x)
+      ),
+      ...catalogModels
+    ])
+  ].filter(Boolean).slice(0, 15);
+
+  if (!candidates.length) {
+    throw new Error('No model identifiers found in the live catalogue.');
+  }
+
+  let selectedModel;
+  let deployment;
+
+  console.log('\nVERIFYING MODEL AND GATEWAY ATTESTATIONS');
+
+  for (const model of candidates) {
+    console.log('\nChecking:', model);
+
+    try {
+      const result = await client.verify(model);
+
+      if (!Array.isArray(result.models) || result.models.length === 0) {
+        throw new Error('No verified model TEE evidence returned.');
+      }
+
+      selectedModel = model;
+      deployment = result;
+
+      console.log('PASS: Gateway attestation verified.');
+      console.log('PASS: Model attestation verified.');
+      console.log('Verified model reports:', result.models.length);
+
+      break;
+
+    } catch (error) {
+      showError(error);
+
+      // A collateral-verifier failure affects the verification
+      // infrastructure. Do not hide it by switching models.
+      if (isVerifierFailure(error)) {
+        throw error;
+      }
+    }
+  }
+
+  if (!selectedModel) {
+    throw new Error(
+      'No live catalogue model passed TEE attestation verification.'
+    );
+  }
+
+  console.log('\nSENDING ENCRYPTED TEST REQUEST');
+
+  const completion = await client.chat.completions.create({
+    model: selectedModel,
+
+    messages: [
+      {
+        role: 'user',
+        content: 'Reply exactly: NEARMARK TEE VERIFICATION SUCCESSFUL'
+      }
+    ],
+
+    temperature: 0,
+    max_tokens: 24
+  });
+
+  if (!completion?.id) {
+    throw new Error('Completion ID missing.');
+  }
+
+  console.log('PASS: Inference completed.');
+
+  console.log('\nVERIFYING EXACT RESPONSE SIGNATURE');
+
+  const receipt = await client.verifyResponse(completion.id);
+
+  console.log('Signature type:', receipt.signatureKind);
+
+  if (receipt.signatureKind !== 'provider_tee') {
+    throw new Error(
+      'Response is not signed by the verified model TEE. Received: ' +
+      receipt.signatureKind
+    );
+  }
+
+  const answer =
+    completion.choices?.[0]?.message?.content || '';
+
+  const evidence = {
+    project: 'NEARMARK',
+
+    status: 'VERIFIED',
+
+    model: selectedModel,
+
+    verification: {
+      gatewayAttestationVerified: true,
+      modelAttestationVerified: true,
+      responseSignatureVerified: true,
+      signatureKind: receipt.signatureKind,
+      modelTeeVerified: true
+    },
+
+    gatewayTcbStatus: deployment.gateway?.tcbStatus,
+
+    modelTcbStatuses: deployment.models.map(
+      x => x.tcbStatus
+    ),
+
+    modelAttestationCount: deployment.models.length,
+
+    completionId: completion.id,
+
+    responseSha256: createHash('sha256')
+      .update(answer)
+      .digest('hex'),
+
+    pccsUrl: PCCS_URL,
+    nrasUrl: NRAS_URL,
+
+    verifiedAt:
+      receipt.verifiedAt || new Date().toISOString(),
+
+    limitations: [
+      'TEE attestation does not establish that model conclusions are correct.',
+      'Payment authorization remains the responsibility of the NEARMARK Gate.'
+    ]
+  };
+
+  await writeFile(
+    'artifacts/near-ai-tee-verification.json',
+    JSON.stringify(evidence, null, 2) + '\n',
+    { mode: 0o600 }
+  );
+
+  // Persist whichever currently supported model passed verification.
+  const envFile = '.env';
+  const { readFile: read } = await import('node:fs/promises');
+
+  let envText = await read(envFile, 'utf8');
+
+  envText = envText
+    .split(/\r?\n/)
+    .filter(x => !x.startsWith('NEAR_AI_MODEL='))
+    .join('\n');
+
+  envText += `\nNEAR_AI_MODEL=${selectedModel}\n`;
+
+  await writeFile(envFile, envText, { mode: 0o600 });
+
+  console.log('\n========================================');
+  console.log(' NEAR AI TEE VERIFICATION SUCCESSFUL');
+  console.log('========================================');
+  console.log('Model:', selectedModel);
+  console.log('Response signature: provider_tee');
+  console.log('Evidence: artifacts/near-ai-tee-verification.json');
+}
+
+main().catch(error => {
+  console.error('\nNEAR AI TEE VERIFICATION FAILED');
+  showError(error);
+  process.exitCode = 1;
+});

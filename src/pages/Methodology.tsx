@@ -1,0 +1,30 @@
+import { ArrowUpRight, BookOpen, CheckCircle2, ClipboardList, Fingerprint, Info, ShieldAlert } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { PageIntro, Panel, StateTag } from '../components/Chrome';
+
+const stages = [
+  { stage:'0', title:'Critical authority', color:'red', desc:'The selected agent key has Full Access or another explicitly identified critical authority condition.', evidence:'A matched agent public key and finalized access-key permission.' },
+  { stage:'1', title:'Broad method authority', color:'orange', desc:'The selected key is contract-scoped, but its function-call method list is unrestricted or a material limitation is unresolved.', evidence:'FunctionCall receiver and method list from NEAR RPC.' },
+  { stage:'2', title:'Scoped direct authority', color:'yellow', desc:'The selected key is restricted to one receiver and an explicit method list. This is a direct-permission assessment, not a safety verdict.', evidence:'Matched public key, receiver, explicit methods and allowance.' },
+  { stage:'3', title:'Tested controls', color:'green', desc:'Stage 2 controls plus successful, reproducible benchmark evidence and independently verified owner recovery controls.', evidence:'Versioned benchmark run, test evidence, recovery proof and applicable attestations.' },
+];
+
+export default function Methodology() {
+  return <>
+    <PageIntro eyebrow="TRANSPARENCY / 06" title="Methodology & limits" description="Nearmark reports observable evidence, not absolute safety. Every grade is scoped to an account, key, code version, policy and test environment." action={<a href="https://github.com/nearai/near-hackathon-prompt-examples/blob/main/tracks/06-security.md" target="_blank" rel="noreferrer" className="button button-outline">Official Track 06 <ArrowUpRight size={14}/></a>}/>
+    <div className="benchmark-note"><Info size={17}/><div><strong>No wallet is “certified safe.”</strong><p>A Nearmark stage is a bounded assessment of evidence available at a specific time. It is not an audit, insurance policy, guarantee against compromise or statement about a key holder's identity.</p></div></div>
+    <Panel title="Agent assurance stages" subtitle="Stages are assigned only when the relevant evidence is available. No agent key selected means no agent-specific stage.">
+      <div className="stage-list">{stages.map(s=><div className="stage-row" key={s.stage}><div className={`stage-badge stage-${s.color}`}>{s.stage}</div><div className="stage-body"><div><strong>{s.title}</strong><StateTag state={`Stage ${s.stage}`}/></div><p>{s.desc}</p><small>Evidence required: {s.evidence}</small></div></div>)}</div>
+    </Panel>
+    <div className="two-column-layout">
+      <Panel title="What Nearmark can observe" subtitle="Public or explicitly supplied evidence."><ul className="evidence-list"><li><CheckCircle2/> NEAR account existence and finalized state.</li><li><CheckCircle2/> Registered access-key permissions, receiver and method scope.</li><li><CheckCircle2/> Deployed code hash at a queried block.</li><li><CheckCircle2/> Indexed transaction sample and reported interaction history.</li><li><CheckCircle2/> Reproducible local harness outcomes; NEAR Sandbox evidence when that integration is enabled.</li><li><CheckCircle2/> Cryptographic attestation when the relevant verifier is configured and passes.</li></ul></Panel>
+      <Panel title="What it cannot infer automatically" subtitle="Unknown must stay unknown."><ul className="limitation-list"><li>Which human physically possesses a private key.</li><li>Whether a private key is compromised simply from public account state.</li><li>Whether a contract is safe merely because its code hash is stable.</li><li>All possible effects of arbitrary WASM from a shallow static scan.</li><li>Whether a model's conclusion is correct because it ran inside a TEE.</li><li>Whether a wallet is safe outside the exact code, block, policy and test configuration assessed.</li></ul></Panel>
+    </div>
+    <Panel title="Benchmark methodology" subtitle="The Nearmark Agent Security Benchmark (NASB) must be versioned and reproducible.">
+      <div className="benchmark-contract-grid"><div><ClipboardList size={18}/><strong>Fixed scenarios</strong><p>Each profile runs the same published test suite, funding, environment and expected outcomes.</p></div><div><Fingerprint size={18}/><strong>Identified inputs</strong><p>Record code commit, configuration hash, test fixture, block height and test-suite version.</p></div><div><ShieldAlert size={18}/><strong>Observed effects</strong><p>An attack counts only when a forbidden state change occurs, not merely when a malicious prompt is generated.</p></div></div>
+      <div className="methodology-callout"><strong>Important comparison rule</strong><p>Do not rank third-party guards unless the same test can be reproduced against the exact public version and configuration. “Not tested” is not a failure. A failed setup is not proof of insecurity.</p></div>
+    </Panel>
+    <Panel title="Track 06 compliance" subtitle="The current implementation plan maps to the official prompt."><div className="compliance-table"><div><strong>Counterparty check</strong><StateTag state="Implemented in API"/></div><div><strong>Account age / activity</strong><StateTag state="Indexed sample; age cautious"/></div><div><strong>Contract + code changes</strong><StateTag state="Code hash; historical diff pending"/></div><div><strong>Prior agent interactions</strong><StateTag state="Not checked; transaction-level pairwise join pending"/></div><div><strong>Shared evidence reports</strong><StateTag state="Pending-only registry implemented"/></div><div><strong>FunctionCall wrapper</strong><StateTag state="Sample SDK; no production signing"/></div><div><strong>Prompt-injection demo + log</strong><StateTag state="Local deterministic harness"/></div></div></Panel>
+    <div className="page-footnote"><span>NASB / METHODOLOGY DRAFT 0.1</span><span>Public evidence may be incomplete or stale.</span><Link to="/developers">Developer documentation <ArrowUpRight size={12}/></Link></div>
+  </>;
+}
